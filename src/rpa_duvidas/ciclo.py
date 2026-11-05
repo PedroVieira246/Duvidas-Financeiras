@@ -99,6 +99,10 @@ class Robo:
         self.envio_real = cfg.envio_real
         self.modo = "REAL" if self.envio_real else "SIMULACAO"
         self.destino_teste = cfg.destino_teste      # v0.3.0 – D02: todas as mensagens vão para o destino padrão
+        # v0.3.0 – envio liberado por categoria (D10 – seção 6.7). Vazio = todas liberadas (v0.2.1)
+        self.categorias: Dict[str, Dict] = dict(cfg.get("categorias", {}) or {})
+        self.bloqueadas: Dict[str, str] = {}        # categoria → protocolo do "Tutorial errado" (T13)
+        self.acao_manual = cfg.acao_manual
         self.permitidos = list(cfg.get("seguranca.destinatarios_permitidos", []) or [])
         self.cats = cfg.get("caixa.categorias_outlook", {}) or {}
         self.mover = bool(cfg.get("caixa.mover_apos_tratar", True))
@@ -114,6 +118,35 @@ class Robo:
         # v0.3.0 – caixa pessoal (seção 6.1)
         self.marcar_nao_fornecedores = bool(cfg.get("caixa.marcar_nao_fornecedores", True))
         self.pular_ja_respondidos = bool(cfg.get("caixa.pular_ja_respondidos", False))
+
+    # ---- envio por categoria (v0.3.0 – seção 6.7) ---------------------------- #
+    @staticmethod
+    def codigo_categoria(c: Classificacao) -> str:
+        """Código da aba Categorias para a classificação (o manual se divide por motivo)."""
+        if c.categoria != Categoria.MANUAL:
+            return c.categoria
+        return {MotivoManual.SAP: "MANUAL_SAP", MotivoManual.FORA_DO_ESCOPO: "MANUAL_FORA_ESCOPO"}.get(
+            c.motivo_manual or "", "MANUAL")
+
+    def categoria_liberada(self, codigo: str) -> bool:
+        if not self.categorias:
+            return True                                  # sem aba Categorias: comportamento da v0.2.1
+        return bool((self.categorias.get(codigo) or {}).get("liberada", False))
+
+    def _deve_enviar(self, codigo: str, r: Resultado) -> bool:
+        """Envia só com modo REAL + categoria liberada + categoria não bloqueada (a trava vem depois)."""
+        r.categoria_liberada = self.categoria_liberada(codigo) and codigo not in self.bloqueadas
+        return bool(self.envio_real and r.categoria_liberada)
+
+    def _aplicar_config_categoria(self, c: Classificacao) -> None:
+        """Ativa = N ou Ação = MANUAL na aba Categorias → sempre análise manual."""
+        conf = self.categorias.get(c.categoria) if c.categoria != Categoria.MANUAL else None
+        if not conf or (conf.get("ativa", True) and str(conf.get("acao", "")).upper() != "MANUAL"):
+            return
+        c.detalhes.setdefault("categoria_sugerida", c.categoria)
+        situacao = "desativada" if not conf.get("ativa", True) else "configurada como MANUAL"
+        c.motivo = f"categoria {c.categoria} {situacao} na planilha | {c.motivo}"
+        c.categoria, c.motivo_manual = Categoria.MANUAL, MotivoManual.CATEGORIA_DESABILITADA
 
     def eh_fornecedor(self, remetente: str) -> bool:
         """Remetente que o robô pode tratar: não interno e (se exigido) na lista de fornecedores."""
@@ -284,6 +317,7 @@ class Robo:
                 c.detalhes.setdefault("categoria_sugerida", c.categoria)
                 c.motivo = f"confiança {c.confianca:.2f} < limite {self.cfg.limite_confianca:.2f} | {c.motivo}"
                 c.categoria, c.motivo_manual = Categoria.MANUAL, MotivoManual.BAIXA_CONFIANCA
+            self._aplicar_config_categoria(c)
         r.classificacao = c
 
         # 4. ação
@@ -357,11 +391,14 @@ class Robo:
                 f"'{self.cfg.ambiente}': {', '.join(bloqueados)}"
             )
 
-    def _finalizar_ok(self, email: EmailRecebido, destino: str, categoria_chave: str, r: Resultado) -> None:
+    def _finalizar_ok(self, email: EmailRecebido, destino: str, categoria_chave: str, r: Resultado,
+                      enviado: Optional[bool] = None) -> None:
+        """v0.3.0: o status é calculado POR E-MAIL (seção 6.7): CONCLUIDO se saiu, SIMULADO se é rascunho."""
+        enviado = self.envio_real if enviado is None else enviado
         r.destino = destino
-        categoria = self.cats.get(categoria_chave) if self.envio_real else self.cats.get("simulado")
+        categoria = self.cats.get(categoria_chave) if enviado else self.cats.get("simulado")
         self.caixa.finalizar(email, destino, categoria)
-        r.status = Status.CONCLUIDO if self.envio_real else Status.SIMULADO
+        r.status = Status.CONCLUIDO if enviado else Status.SIMULADO
 
     def _destinatarios_resposta(self, email: EmailRecebido, r: Resultado) -> List[str]:
         """Preenche ``r.destinatarios`` / ``r.destinatario_original`` e devolve o CC a usar."""
@@ -376,8 +413,9 @@ class Robo:
         return cc
 
     def _responder(self, email: EmailRecebido, corpo: str, anexos, r: Resultado, cc: Optional[List[str]] = None,
-                   prefixo_assunto: str = "") -> None:
+                   prefixo_assunto: str = "", codigo: str = "") -> None:
         responder_todos = bool(self.cfg.get("respostas.responder_todos", False))
+        enviar = self._deve_enviar(codigo, r) if codigo else self.envio_real
         if cc is None:
             cc = self._destinatarios_resposta(email, r)
         self._verificar_destinatarios(r.destinatarios)
@@ -388,10 +426,11 @@ class Robo:
         if prefixo_assunto:
             extra["prefixo_assunto"] = prefixo_assunto
         r.id_mensagem_gerada = self.caixa.responder(
-            email, corpo, anexos=anexos, cc=cc, responder_todos=responder_todos, enviar=self.envio_real, **extra
+            email, corpo, anexos=anexos, cc=cc, responder_todos=responder_todos, enviar=enviar, **extra
         )
+        r.enviado = enviar
         self.registro.marcar_acao_executada(email.chave)
-        self._finalizar_ok(email, Destino.RESPONDIDOS, "respondido", r)
+        self._finalizar_ok(email, Destino.RESPONDIDOS, "respondido", r, enviar)
 
     def _responder_tutorial(self, email: EmailRecebido, c: Classificacao, r: Resultado) -> None:
         r.acao = Acao.RESPONDER_TUTORIAL
@@ -402,20 +441,31 @@ class Robo:
             email, c.categoria, nome_arquivo=tutorial.nome, descricao_tutorial=tutorial.descricao,
             destinatario_original=r.destinatario_original,
         )
-        self._responder(email, corpo, [tutorial.caminho], r, cc)
+        self._responder(email, corpo, [tutorial.caminho], r, cc, codigo=c.categoria)
 
     def _responder_forms(self, email: EmailRecebido, r: Resultado) -> None:
         r.acao = Acao.RESPONDER_FORMS
         r.arquivo_enviado = "(link do Forms)"
         cc = self._destinatarios_resposta(email, r)
         corpo = self.respostas.resposta(email, Categoria.FORMS_PO, destinatario_original=r.destinatario_original)
-        self._responder(email, corpo, [], r, cc)
+        self._responder(email, corpo, [], r, cc, codigo=Categoria.FORMS_PO)
 
     def _encaminhar_manual(self, email: EmailRecebido, c: Classificacao, r: Resultado) -> None:
         r.acao = Acao.ENCAMINHAR_MANUAL
         motivo = c.motivo_manual or MotivoManual.NAO_IDENTIFICADO
         rotulo = (self.cfg.get("respostas.rotulos_motivo_manual", {}) or {}).get(motivo, motivo)
         prefixo = str(self.cfg.get("respostas.prefixo_manual", "[MANUAL – {motivo}]")).format(motivo=rotulo)
+        codigo = self.codigo_categoria(c)
+        if self.acao_manual == "CATEGORIZAR":
+            # v0.3.0 – caixa pessoal: o caso manual fica na entrada com "RPA - Encaminhado", sem mensagem nova
+            r.categoria_liberada = self.categoria_liberada(codigo)
+            r.enviado = False
+            self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
+            self.registro.marcar_acao_executada(email.chave)
+            r.destino = Destino.ENCAMINHADOS
+            self.caixa.finalizar(email, Destino.ENCAMINHADOS, self.cats.get("encaminhado"))
+            r.status = Status.CONCLUIDO
+            return
         para = self.cfg.destino_manual(motivo)
         if self.destino_teste:                          # seção 6.2: encaminhamento também só ao destino padrão
             r.destinatario_original = "; ".join(para)
@@ -426,9 +476,11 @@ class Robo:
         self._verificar_destinatarios(para)
         nota = self.respostas.nota_manual(email, c, rotulo)
         self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
-        r.id_mensagem_gerada = self.caixa.encaminhar(email, para, prefixo, nota, enviar=self.envio_real)
+        enviar = self._deve_enviar(codigo, r)
+        r.id_mensagem_gerada = self.caixa.encaminhar(email, para, prefixo, nota, enviar=enviar)
+        r.enviado = enviar
         self.registro.marcar_acao_executada(email.chave)
-        self._finalizar_ok(email, Destino.ENCAMINHADOS, "encaminhado", r)
+        self._finalizar_ok(email, Destino.ENCAMINHADOS, "encaminhado", r, enviar)
 
     # ---- erro (RNF02) ---------------------------------------------------- #
     def _registrar_erro(self, email: EmailRecebido, r: Resultado, erro: Exception) -> None:

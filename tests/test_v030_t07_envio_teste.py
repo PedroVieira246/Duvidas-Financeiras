@@ -54,6 +54,8 @@ def test_criterio_3_nada_sai_fora_do_destino_padrao_ou_aviso_erro(
         projeto_cal, cfg_cal, envio_real, responder_todos, cc, acao_manual, escondido, trava_caixa):
     cfg = cfg_cal
     cfg.dados["execucao"]["envio_real"] = envio_real
+    for conf in cfg.dados["categorias"].values():          # no modo REAL, tudo liberado (pior caso para a trava)
+        conf["liberada"], conf["data_liberacao"] = envio_real, "2026-11-01"
     cfg.dados["respostas"]["responder_todos"] = responder_todos
     cfg.dados["destinatarios"]["analistas_cc"] = cc
     cfg.dados["destinatarios"]["acao_manual"] = acao_manual

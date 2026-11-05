@@ -46,7 +46,8 @@ COLUNAS_EVENTO = [
 # reportando só as colunas dela; o banco e a planilha usam COLUNAS_REGISTRO.
 COLUNAS_V030 = [
     ("escritorio", "Escritório"), ("destinatario_original", "Destinatário original"),
-    ("destino_respostas", "Destino das respostas"),
+    ("destino_respostas", "Destino das respostas"), ("enviado", "Enviado"),
+    ("categoria_liberada", "Categoria liberada"),
 ]
 COLUNAS_REGISTRO = COLUNAS_EVENTO + COLUNAS_V030
 # Colunas que entraram depois da v0.1.0 chegam a um banco antigo por ALTER TABLE (migrar – lacuna R7)
@@ -149,6 +150,10 @@ def migrar(con: sqlite3.Connection, colunas=None) -> List[str]:
     return novas
 
 
+def _sn(valor) -> str:
+    return "" if valor is None else ("S" if valor else "N")
+
+
 def _lista(valor) -> str:
     return ", ".join(str(x) for x in valor) if isinstance(valor, (list, tuple)) else str(valor or "")
 
@@ -222,7 +227,8 @@ class Registro:
             "arquivo_enviado": r.arquivo_enviado, "destinatarios": "; ".join(r.destinatarios),
             "destino": r.destino, "status": r.status, "erro": r.erro, "duracao_ms": str(r.duracao_ms),
             "escritorio": e.escritorio, "destinatario_original": r.destinatario_original,
-            "destino_respostas": self.destino_respostas,
+            "destino_respostas": self.destino_respostas, "enviado": _sn(r.enviado),
+            "categoria_liberada": _sn(r.categoria_liberada),
         }
         if not c and r.motivo_ignorado:
             linha["motivo"] = r.motivo_ignorado
