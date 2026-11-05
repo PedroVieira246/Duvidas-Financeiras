@@ -1,13 +1,37 @@
 # Histórico de versões
 
-## 0.3.0 – em desenvolvimento
+## 0.3.0 – 05/11/2026
 
-Executável configurável por planilha, para a calibração na máquina do analista (`Especificacao_Tecnica_v0.3.0_EXE_Calibracao.md`). Base: v0.2.1.
+Executável configurável por planilha, para a calibração na máquina do analista, conforme a `Especificacao_Tecnica_v0.3.0_EXE_Calibracao.md` (v1.0, 05/11/2026). Detalhes, decisões da análise e desvios em `docs/13_ajustes_v0.3.0.md`; guia de instalação (rascunho) em `docs/12_guia_instalacao_v0.3.0.md`. Sem o perfil `calibracao`, o comportamento é o da v0.2.1: as chaves novas têm padrão que a reproduz.
+
+**Incluído**
+
+- Perfil **`calibracao`** (D01–D04): caixa pessoal, sem mover, respostas só para o e-mail destino padrão (`destino_respostas: TESTE`), IA desligada, caso manual categorizado (`acao_manual: CATEGORIZAR`).
+- **`config\configuracao.xlsx`** (seção 5): abas LEIA-ME, Geral, Categorias, Palavras_chave, Textos, Tutoriais, Destinatarios, Filtros e Listas. `scripts/gerar_modelo_config.py` gera o modelo (com `A_PREENCHER`) ou migra um perfil YAML. `config_xlsx.ler_configuracao_xlsx()` copia o arquivo antes de abrir e devolve `ErroCelula` com aba, linha e coluna; qualquer erro impede a execução. Mescla `settings.yaml` → perfil → xlsx.
+- **Raízes do executável** (seção 4.4): `raiz_aplicacao()` (pasta do .exe: planilha, `modelos\`, `dados\`, `logs\`, `arquivo\`) e `raiz_recursos()` (arquivos empacotados). Um `.j2` em `modelos\` substitui o padrão.
+- **Planilha de escritórios** (D06): mapa domínio → escritório, lido a cada ciclo e usado como lista de fornecedores e para o escritório do e-mail. Planilha indisponível: o ciclo não roda e o aviso sai uma vez por dia.
+- **Caixa pessoal** (seção 6.1): `marcar_nao_fornecedores` (não fornecedores não são alterados nem registrados; o filtro roda antes do lote; contador `nao_fornecedores`) e `pular_ja_respondidos` (`PR_LAST_VERB_EXECUTED` 102/103/104 → Ignorados com `JA_TRATADO_PELO_ANALISTA`, só a categoria).
+- **Envio de teste** (D02, seção 6.2):
+  - `responder(redirecionar_para=…)` mantém o fio do `Reply()`, remove todos os destinatários e zera o CC;
+  - **trava por operação** (`TravaDestinatarios`) que relê `Recipients` em SMTP antes do `Send`/`Save` e bloqueia quando o SMTP não é identificado;
+  - coluna `destinatario_original` e faixa da calibração.
+- **Envio por categoria** (D10, seção 6.7): envia só com modo REAL, categoria liberada e categoria não bloqueada; status por e-mail (CONCLUIDO ou SIMULADO). Categoria desativada vai para manual. Bloqueio automático por "Tutorial errado" depois da data de liberação, com aviso único a AVISO_ERRO.
+- **Tutoriais pelo caminho completo e link do Forms** (D07); FORMS_PO sem link vai para manual.
+- **Aba Textos** (D09): `RESP_<CATEGORIA>`, `AVISO_AUTOMATICO` (em toda resposta), `ASSINATURA` e `NOTA_MANUAL`; texto escapado, um `<p>` por linha; ação `RESPONDER_TEXTO`; prefixo no assunto.
+- **Arquivamento .msg** (D05): `<raiz>\<Escritório>\<AAAA-MM>\…_<protocolo>_<assunto>.msg`. Uma falha não desfaz a resposta e grava `FALHA: …`. Comando `arquivar-pendentes`.
+- **Retorno manual** (D08): tabela `retorno_manual` (fonte da verdade), lida da planilha a cada exportação sem que uma célula vazia apague o valor gravado. A aba Registro fica protegida, com só o retorno editável e validações. O Resumo mostra, por categoria, avaliados, acerto, erros graves e tempo economizado. Colunas novas: escritório, destinatário original, destino das respostas, enviado, categoria liberada, arquivado em, máquina, usuário e versão.
+- **`verificar` ampliado** (seção 7.2), salvo em `logs\verificar_*.txt`, e **menu do console** (duplo clique no .exe).
+- **Build** (seção 7.1): `rpa_duvidas.spec` (onedir, importações ocultas), `build_exe.bat` (testes, build, modelo da planilha, `versao.txt`, zip), `scripts/rpa_exe.py`, `scripts/gravar_versao.py`, `requirements-build.txt`.
+- 163 testes novos (`tests/test_v030_*.py`, `tests/fakes_outlook.py`), com testes dedicados aos critérios de aceite 2, 3 (64 combinações, incluindo um destinatário que `Recipients.Remove` não tira) e 9. Total: 402, todos passando.
 
 **Alterado**
 
 - Versão interna 0.3.0 (`__init__.py`, `pyproject.toml`).
 - `.gitignore`: `dados/` passou a valer só na raiz (`/dados/`), para não esconder a massa de teste `tests/dados/massa_emails_sintetica.csv`, que agora é versionada. Novos itens: `dist/`, `build/`, `/arquivo/`, `logs/*.txt` e `/config/configuracao.xlsx`.
+- `_base.html.j2`: aviso de resposta automática e assinatura podem vir da aba Textos; sem eles, o texto é o da v0.2.1.
+- `rpa_duvidas.ciclo.ErroSeguranca` agora é a mesma classe de `rpa_duvidas.caixa.base.ErroSeguranca`.
+
+**Pendente:** build e teste do .exe em uma máquina sem Python (T15), revisão do guia pelo financeiro e o PDF (T16), instalação assistida (T17) e os pontos em aberto da seção 12 – ver docs/13.
 
 ## 0.2.1 – 27/10/2026
 

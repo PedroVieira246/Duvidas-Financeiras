@@ -2,6 +2,9 @@
 
 Robô em Python que **lê** os e-mails de dúvidas de fornecedores, **classifica** o tema e **age**: responde com o tutorial anexado ou com o link do Forms, ou encaminha para análise manual com o motivo. Usa o Microsoft Outlook clássico (pywin32) no MVP.
 
+> Versão 0.3.0 · 05/11/2026 · Área BT · Pedro Vieira
+> **Novidade da 0.3.0:** executável (`RPA_DuvidasFinanceiras.exe`) configurado pela planilha `config\configuracao.xlsx`, para a calibração na máquina do analista (perfil `calibracao`): respostas só para o e-mail destino padrão, arquivamento .msg, retorno manual na planilha de controle e envio liberado por categoria. Ver [docs/12_guia_instalacao_v0.3.0.md](docs/12_guia_instalacao_v0.3.0.md) e [docs/13_ajustes_v0.3.0.md](docs/13_ajustes_v0.3.0.md).
+>
 > Versão 0.2.0 · 23/10/2026 · Área BT · Pedro Vieira
 > Bases: `Especificacao_MVP_RPA_DuvidasFinanceiras.md` (15/10/2026) e `especificacao_funcional_classificacao.md` (22/10/2026 – classificação por IA)
 
