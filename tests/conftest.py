@@ -73,3 +73,119 @@ def json_ia(**sobrescrever):
     }
     base.update(sobrescrever)
     return base
+
+
+# --------------------------------------------------------------------------- #
+# v0.3.0 – perfil calibracao configurado pela planilha (configuracao.xlsx)
+# --------------------------------------------------------------------------- #
+CAIXA_CAL = "maria.laura@empresa-exemplo.com.br"
+DESTINO_CAL = "anelise@empresa-exemplo.com.br"
+AVISO_CAL = "bt.rpa@empresa-exemplo.com.br"
+FORMS_CAL = "https://forms.office.com/r/EXEMPLO-PO"
+
+GERAL_CAL = {
+    "email_caixa_entrada": CAIXA_CAL, "email_destino_padrao": DESTINO_CAL, "recebidos_desde": "2026-10-01",
+    "caminho_planilha_escritorios": "dados_teste/escritorios.xlsx", "coluna_dominio": "Domínio",
+    "coluna_escritorio": "Escritório", "caminho_arquivo_emails": "arquivo", "nome_analista": "Maria Laura",
+}
+TUTORIAIS_CAL = {
+    "TUT_CONNECT": "dados_teste/tutoriais/04. Suporte Connect/Tutorial - Acesso ao Connect.pptx",
+    "TUT_UPLOAD_NF": "dados_teste/tutoriais/Upload de NF/PYM (Connect) - Upload e consulta de NFs.pdf",
+    "TUT_REEMBOLSO": "dados_teste/tutoriais/Reembolso/Como abrir um chamado de Reembolso.pptx",
+    "TUT_CADASTRO": "dados_teste/tutoriais/03. Tutorial de acessos/Tutorial - Atualizacao de cadastro.pptx",
+}
+ESCRITORIOS_CAL = [("fornecedor-exemplo.com.br", "Escritório Exemplo"), ("outro-fornecedor.com.br", "Outro Escritório")]
+
+
+def criar_planilha_escritorios(caminho: Path, linhas=ESCRITORIOS_CAL, colunas=("Domínio", "Escritório"),
+                               aba="Escritórios") -> Path:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = aba
+    ws.append(list(colunas))
+    for linha in linhas:
+        ws.append(list(linha))
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(caminho)
+    return caminho
+
+
+def preencher_calibracao(projeto: Path, geral=None, categorias=None, tutoriais=None, link_forms=FORMS_CAL,
+                         destinatarios=None, dominios=("empresa-exemplo.com.br",), textos=None,
+                         destino: Path = None) -> Path:
+    """Gera o modelo da calibração e troca os A_PREENCHER por valores de teste.
+
+    ``categorias``: {CODIGO: {"Ativa": "S", "Liberada para envio": "S", ...}} (por nome de coluna).
+    ``textos``: {CODIGO: corpo} acrescentados/substituídos na aba Textos.
+    """
+    from openpyxl import load_workbook
+
+    from rpa_duvidas import config_xlsx_esquema as E
+    from rpa_duvidas.config_xlsx_modelo import gerar_modelo
+
+    destino = destino or projeto / "config" / "configuracao.xlsx"
+    gerar_modelo(carregar("calibracao", raiz=projeto, usar_xlsx=False), destino)
+    wb = load_workbook(destino)
+    valores = {**GERAL_CAL, **(geral or {})}
+    for linha in wb[E.ABA_GERAL].iter_rows(min_row=2):
+        if linha[0].value in valores:
+            linha[1].value = valores[linha[0].value]
+    cats = wb[E.ABA_CATEGORIAS]
+    cab = [c.value for c in cats[1]]
+    for linha in cats.iter_rows(min_row=2):
+        conf = (categorias or {}).get(linha[0].value) or {}
+        for coluna, v in conf.items():
+            linha[cab.index(coluna)].value = v
+    tut = {**TUTORIAIS_CAL, **(tutoriais or {})}
+    for linha in wb[E.ABA_TUTORIAIS].iter_rows(min_row=2):
+        if linha[0].value in tut:
+            linha[1].value = tut[linha[0].value]
+        if linha[0].value == "FORMS_PO":
+            linha[2].value = link_forms
+    wd = wb[E.ABA_DESTINATARIOS]
+    wd.delete_rows(2, wd.max_row)
+    for tipo, end in (destinatarios or [("AVISO_ERRO", AVISO_CAL)]):
+        wd.append([tipo, end])
+    wf = wb[E.ABA_FILTROS]
+    for linha in wf.iter_rows(min_row=2):
+        if linha[0].value == "DOMINIO_INTERNO":
+            linha[1].value = dominios[0] if dominios else None
+    for d in list(dominios)[1:]:
+        wf.append(["DOMINIO_INTERNO", d, "S"])
+    if textos:
+        wt = wb[E.ABA_TEXTOS]
+        existentes = {linha[0].value: linha for linha in wt.iter_rows(min_row=2)}
+        for cod, corpo in textos.items():
+            if cod in existentes:
+                existentes[cod][2].value = corpo
+            else:
+                wt.append([cod, None, corpo])
+    wb.save(destino)
+    if not (projeto / "dados_teste" / "escritorios.xlsx").exists():
+        criar_planilha_escritorios(projeto / "dados_teste" / "escritorios.xlsx")
+    return destino
+
+
+@pytest.fixture()
+def projeto_cal(projeto) -> Path:
+    """Projeto temporário com config/configuracao.xlsx preenchido para a calibração."""
+    preencher_calibracao(projeto)
+    return projeto
+
+
+def usar_caixa_simulada(cfg):
+    """Troca a caixa do perfil calibracao (Outlook) pela caixa simulada em disco."""
+    cfg.dados["caixa"].update({
+        "tipo": "arquivo", "pasta_entrada": "entrada", "criar_pastas_ausentes": True,
+        "pastas_destino": {"respondidos": "respondidos", "encaminhados": "encaminhados", "erro": "erro",
+                           "ignorados": "ignorados"},
+        "arquivo": {"raiz": "dados_teste/caixa_simulada"},
+    })
+    return cfg
+
+
+@pytest.fixture()
+def cfg_cal(projeto_cal):
+    return usar_caixa_simulada(carregar("calibracao", raiz=projeto_cal))

@@ -10,7 +10,7 @@ from rpa_duvidas.config_xlsx_modelo import gerar_modelo
 
 @pytest.fixture()
 def modelo_calibracao(projeto, tmp_path):
-    return gerar_modelo(carregar("calibracao", raiz=projeto), tmp_path / "cal.xlsx", senha="segredo-teste")
+    return gerar_modelo(carregar("calibracao", raiz=projeto, usar_xlsx=False), tmp_path / "cal.xlsx", senha="segredo-teste")
 
 
 @pytest.fixture()

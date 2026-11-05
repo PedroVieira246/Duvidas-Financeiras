@@ -1,6 +1,8 @@
 """Carga e validação da configuração (F01).
 
-``config/settings.yaml`` (base) + ``config/perfis/<perfil>.yaml`` (o que muda).
+``config/settings.yaml`` (base) + ``config/perfis/<perfil>.yaml`` (o que muda)
++ ``config/configuracao.xlsx`` (v0.3.0 – só nos perfis com
+``configuracao_xlsx.obrigatoria: true``, como o ``calibracao``).
 O perfil vem do argumento ``--perfil`` ou da variável ``RPA_PERFIL``.
 """
 from __future__ import annotations
@@ -15,6 +17,10 @@ import yaml
 
 RAIZ_PROJETO = Path(__file__).resolve().parents[2]
 MARCADOR_PENDENTE = "<PREENCHER"
+MARCADORES_PENDENTE = (MARCADOR_PENDENTE, "A_PREENCHER")
+DESTINOS_RESPOSTA = ("FORNECEDOR", "TESTE")
+ACOES_MANUAL = ("CATEGORIZAR", "ENCAMINHAR")
+_RE_EMAIL = re.compile(r"^[^@\s;,<>]+@[^@\s;,<>]+\.[^@\s;,<>]+$")
 TIPOS_CAIXA = ("outlook_com", "arquivo", "graph")
 TIPOS_CLASSIFICADOR = ("palavras_chave", "ia", "menu")
 TIPOS_PROVEDOR_IA = ("simulado", "http_generico")
@@ -67,7 +73,7 @@ def _valores_pendentes(dados: Any, prefixo: str = "") -> Iterable[str]:
     elif isinstance(dados, list):
         for i, v in enumerate(dados):
             yield from _valores_pendentes(v, f"{prefixo}[{i}]")
-    elif isinstance(dados, str) and MARCADOR_PENDENTE in dados:
+    elif isinstance(dados, str) and any(m in dados for m in MARCADORES_PENDENTE):
         yield f"{prefixo} = {dados}"
 
 
@@ -85,6 +91,7 @@ class Config:
         self.perfil = perfil
         self.raiz = raiz
         self._cache_yaml: Dict[str, Dict[str, Any]] = {}
+        self.erros_xlsx: List[Any] = []     # ErroCelula da planilha de configuração (v0.3.0)
 
     # ---- leitura genérica ------------------------------------------------ #
     def get(self, caminho: str, padrao: Any = None) -> Any:
@@ -108,7 +115,14 @@ class Config:
         return p if p.is_absolute() else (self.raiz / p)
 
     def yaml_referenciado(self, chave: str) -> Dict[str, Any]:
-        """Carrega (com cache) um YAML cujo caminho está em ``chave``."""
+        """Carrega (com cache) um YAML cujo caminho está em ``chave``.
+
+        v0.3.0: o conteúdo pode vir já carregado da planilha de configuração, em
+        ``dados["_inline"][chave]`` (termos e tutoriais) – tem prioridade.
+        """
+        inline = (self.dados.get("_inline") or {}).get(chave)
+        if inline is not None:
+            return inline
         p = self.caminho(chave)
         k = str(p)
         if k not in self._cache_yaml:
@@ -140,6 +154,21 @@ class Config:
         if self.classificador == "ia" and self.get("classificacao.ia.limite_confianca") is not None:
             return float(self.get("classificacao.ia.limite_confianca"))
         return float(self.get("classificacao.limite_confianca", 0.6))
+
+    @property
+    def usa_xlsx(self) -> bool:
+        return bool(self.get("configuracao_xlsx.obrigatoria", False))
+
+    @property
+    def destino_teste(self) -> Optional[str]:
+        """E-mail destino padrão quando ``execucao.destino_respostas = TESTE`` (D02); senão None."""
+        if str(self.get("execucao.destino_respostas", "FORNECEDOR")).upper() != "TESTE":
+            return None
+        return str(self.get("execucao.email_destino_padrao", "") or "").strip().lower() or None
+
+    @property
+    def acao_manual(self) -> str:
+        return str(self.get("destinatarios.acao_manual", "ENCAMINHAR") or "ENCAMINHAR").upper()
 
     def destino_manual(self, motivo: Optional[str]) -> List[str]:
         por_motivo = self.get("destinatarios.analise_manual.por_motivo", {}) or {}
@@ -177,8 +206,14 @@ class Config:
                 "seguranca.destinatarios_permitidos vazio fora de prod: defina os domínios "
                 "internos para impedir envio acidental a fornecedores"
             )
-        if not self.get("destinatarios.analise_manual.padrao"):
+        if self.acao_manual not in ACOES_MANUAL:
+            erros.append(f"destinatarios.acao_manual inválido: {self.acao_manual!r} (use {', '.join(ACOES_MANUAL)})")
+        elif (self.acao_manual == "ENCAMINHAR" and self.destino_teste is None
+              and not self.get("destinatarios.analise_manual.padrao")):
             erros.append("destinatarios.analise_manual.padrao vazio (RF08)")
+        erros += self._validar_destino_respostas()
+        if self.usa_xlsx:
+            erros += self._validar_calibracao()
         for chave in ("tutoriais.arquivo", "filtros.arquivo_fornecedores", "classificacao.arquivo_termos"):
             try:
                 self.yaml_referenciado(chave)
@@ -189,6 +224,34 @@ class Config:
         pend = self.pendencias()
         if pend:
             erros.append("Valores ainda não preenchidos:\n    - " + "\n    - ".join(pend))
+        return [str(e) for e in self.erros_xlsx] + erros
+
+    def _validar_destino_respostas(self) -> List[str]:
+        """v0.3.0 – envio de teste para o destino padrão (seção 6.2)."""
+        erros: List[str] = []
+        destino = str(self.get("execucao.destino_respostas", "FORNECEDOR")).upper()
+        if destino not in DESTINOS_RESPOSTA:
+            erros.append(f"execucao.destino_respostas inválido: {destino!r} (use {', '.join(DESTINOS_RESPOSTA)})")
+            return erros
+        if destino == "TESTE":
+            padrao = str(self.get("execucao.email_destino_padrao", "") or "").strip().lower()
+            if not _RE_EMAIL.match(padrao):
+                erros.append("execucao.email_destino_padrao obrigatório e válido com destino_respostas = TESTE")
+            elif padrao == str(self.get("caixa.conta", "") or "").strip().lower():
+                erros.append("execucao.email_destino_padrao precisa ser diferente do e-mail da caixa (caixa.conta)")
+        return erros
+
+    def _validar_calibracao(self) -> List[str]:
+        """Regras fixas dos perfis configurados pela planilha (calibração – D02, D04, D05, D06)."""
+        erros: List[str] = []
+        if self.classificador != "palavras_chave":
+            erros.append("IA desligada nesta etapa: classificacao.tipo deve ser palavras_chave (D04)")
+        if self.destino_teste is None and str(self.get("execucao.destino_respostas", "")).upper() != "TESTE":
+            erros.append("Na calibração as respostas vão só para o destino padrão: destino_respostas = TESTE (D02)")
+        if not self.get("escritorios.arquivo"):
+            erros.append("escritorios.arquivo (caminho_planilha_escritorios) não definido (D06)")
+        if not self.get("arquivamento.raiz"):
+            erros.append("arquivamento.raiz (caminho_arquivo_emails) não definido (D05)")
         return erros
 
 
@@ -214,8 +277,36 @@ class Config:
         return erros
 
 
-def carregar(perfil: Optional[str] = None, raiz: Path = RAIZ_PROJETO) -> Config:
-    """Carrega base + perfil. Não valida (use ``Config.validar``)."""
+def _derivar(dados: Dict[str, Any]) -> Dict[str, Any]:
+    """Valores calculados a partir de outros (v0.3.0).
+
+    Com ``destino_respostas = TESTE``, ``seguranca.destinatarios_permitidos`` é
+    montado automaticamente como ``[email_destino_padrao] + AVISO_ERRO``
+    (seção 6.2, item 5) – qualquer valor do perfil é substituído.
+    """
+    execucao = dados.get("execucao") or {}
+    if str(execucao.get("destino_respostas", "")).upper() == "TESTE":
+        padrao = str(execucao.get("email_destino_padrao", "") or "").strip().lower()
+        avisos = [str(e).strip().lower() for e in ((dados.get("destinatarios") or {}).get("avisos_erro") or []) if e]
+        permitidos = list(dict.fromkeys([e for e in [padrao] + avisos if e]))
+        dados.setdefault("seguranca", {})["destinatarios_permitidos"] = permitidos
+    return dados
+
+
+def carregar(
+    perfil: Optional[str] = None,
+    raiz: Path = RAIZ_PROJETO,
+    *,
+    usar_xlsx: bool = True,
+    arquivo_xlsx: Optional[Path] = None,
+) -> Config:
+    """Carrega base + perfil (+ planilha de configuração). Não valida (use ``Config.validar``).
+
+    A planilha só é lida nos perfis com ``configuracao_xlsx.obrigatoria: true``
+    (ou quando ``arquivo_xlsx`` é informado). Nesses perfis, planilha ausente é
+    erro; erros de célula ficam em ``Config.erros_xlsx`` e entram no ``validar()``.
+    ``usar_xlsx=False`` ignora a planilha (usado pelo gerador do modelo).
+    """
     perfil = perfil or os.environ.get("RPA_PERFIL") or "dev"
     base = ler_yaml(raiz / "config" / "settings.yaml")
     arq_perfil = raiz / "config" / "perfis" / f"{perfil}.yaml"
@@ -223,4 +314,25 @@ def carregar(perfil: Optional[str] = None, raiz: Path = RAIZ_PROJETO) -> Config:
         disponiveis = sorted(p.stem for p in (raiz / "config" / "perfis").glob("*.yaml"))
         raise ErroConfiguracao(f"Perfil '{perfil}' não existe. Disponíveis: {', '.join(disponiveis)}")
     dados = mesclar(base, ler_yaml(arq_perfil))
-    return Config(dados, perfil, raiz)
+    erros_xlsx: List[Any] = []
+    obrigatoria = bool((dados.get("configuracao_xlsx") or {}).get("obrigatoria", False))
+    if usar_xlsx and (obrigatoria or arquivo_xlsx is not None):
+        from .config_xlsx import ler_configuracao_xlsx
+
+        caminho = Path(arquivo_xlsx) if arquivo_xlsx is not None else \
+            raiz / str((dados.get("configuracao_xlsx") or {}).get("arquivo", "config/configuracao.xlsx"))
+        if not caminho.exists():
+            raise ErroConfiguracao(
+                f"Planilha de configuração não encontrada: {caminho}. Copie o modelo configuracao.xlsx "
+                "para a pasta config ao lado do executável e preencha os valores A_PREENCHER."
+            )
+        try:
+            parcial, erros_xlsx = ler_configuracao_xlsx(caminho)
+        except ErroConfiguracao:
+            raise
+        except Exception as e:
+            raise ErroConfiguracao(f"Não foi possível ler a planilha de configuração {caminho}: {e}") from e
+        dados = mesclar(dados, parcial)
+    cfg = Config(_derivar(dados), perfil, raiz)
+    cfg.erros_xlsx = list(erros_xlsx)
+    return cfg

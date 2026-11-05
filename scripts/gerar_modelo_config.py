@@ -29,7 +29,7 @@ def main(argv=None) -> int:
     p.add_argument("--saida", default=str(RAIZ / "config" / "configuracao.xlsx"))
     p.add_argument("--senha", default=None, help="senha das abas protegidas (opcional)")
     args = p.parse_args(argv)
-    cfg = carregar(args.perfil, raiz=RAIZ)
+    cfg = carregar(args.perfil, raiz=RAIZ, usar_xlsx=False)
     destino = gerar_modelo(cfg, Path(args.saida), modelo="perfil" if args.migrar else "calibracao", senha=args.senha)
     print(f"Modelo gravado em {destino}")
     if not args.senha:

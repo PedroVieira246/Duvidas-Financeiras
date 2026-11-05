@@ -13,7 +13,14 @@
 # está aqui ou nos arquivos referenciados abaixo.
 # =============================================================================
 
-ambiente: base            # sobrescrito pelo perfil (dev | demo | prod)
+ambiente: base            # sobrescrito pelo perfil (dev | demo | prod | calibracao)
+
+# v0.3.0 – Planilha de configuração (config/configuracao.xlsx, ao lado do .exe).
+# Só é lida nos perfis com obrigatoria: true (calibracao). Mescla:
+# settings.yaml → perfil → planilha (a planilha tem a maior precedência).
+configuracao_xlsx:
+  obrigatoria: false
+  arquivo: "config/configuracao.xlsx"
 
 caixa:
   # outlook_com = Outlook clássico da máquina via pywin32 (MVP)
@@ -72,6 +79,15 @@ caixa:
   recebidos_desde: ""
   max_varredura: 500
 
+  # v0.3.0 – Caixa pessoal (seção 6.1). Os padrões reproduzem a v0.2.1.
+  # marcar_nao_fornecedores: false = e-mail de remetente fora da lista de
+  #   fornecedores (ou interno) não é alterado nem registrado; só é contado.
+  # pular_ja_respondidos: true = e-mail que o analista já respondeu ou
+  #   encaminhou (PR_LAST_VERB_EXECUTED 102/103/104) vai para Ignorados com o
+  #   motivo JA_TRATADO_PELO_ANALISTA e só recebe a categoria.
+  marcar_nao_fornecedores: true
+  pular_ja_respondidos: false
+
   # Só para tipo "arquivo"
   arquivo:
     raiz: "dados_teste/caixa_simulada"
@@ -81,6 +97,13 @@ execucao:
   envio_real: false
   # Usado pelo modo --loop e documentado para o Agendador de Tarefas.
   intervalo_minutos: 15
+  # v0.3.0 – Destino das respostas (seção 6.2).
+  # FORNECEDOR = responde ao remetente (v0.2.1).
+  # TESTE      = toda mensagem vai SÓ para email_destino_padrao (respostas e
+  #              encaminhamentos) ou para destinatarios.avisos_erro (avisos).
+  #              seguranca.destinatarios_permitidos é montado automaticamente.
+  destino_respostas: FORNECEDOR
+  email_destino_padrao: ""
 
 seguranca:
   # Fora do ambiente prod, o robô só envia/gera mensagens para estes
@@ -94,6 +117,27 @@ destinatarios:
     padrao: []
     por_motivo: {}                # ex.: { SAP: [...], NAO_IDENTIFICADO: [...] }
   avisos_erro: []                 # aviso de falha (RNF02)
+  # v0.3.0 – caso manual: ENCAMINHAR (v0.2.1) ou CATEGORIZAR (fica na caixa com a
+  # categoria "RPA - Encaminhado", sem mensagem nova – caixa pessoal)
+  acao_manual: ENCAMINHAR
+
+# v0.3.0 – Categorias (aba Categorias da planilha). Vazio = todas ativas e
+# liberadas: o envio depende só de execucao.envio_real (comportamento v0.2.1).
+# Formato: { CODIGO: {nome, acao, ativa, liberada, data_liberacao, codigo_texto} }
+categorias: {}
+
+# v0.3.0 – Planilha de domínios dos escritórios (D06, seção 5.9). Vazio = não
+# usada (lista de fornecedores em filtros.arquivo_fornecedores, como na v0.2.1).
+escritorios:
+  arquivo: ""
+  aba: ""                         # vazio = 1ª aba
+  coluna_dominio: "Domínio"
+  coluna_escritorio: "Escritório"
+
+# v0.3.0 – Arquivamento dos e-mails tratados em .msg (D05, seção 6.4).
+# Vazio = desligado (v0.2.1).
+arquivamento:
+  raiz: ""
 
 filtros:
   validar_fornecedor: true
@@ -199,6 +243,13 @@ classificacao:
 
 respostas:
   pasta_modelos: "config/modelos"
+  # v0.3.0 – um .j2 com o mesmo nome nesta pasta (ao lado do .exe) substitui o padrão
+  pasta_modelos_personalizados: "modelos"
+  # v0.3.0 – textos da aba Textos (RESP_<CATEGORIA>, AVISO_AUTOMATICO, ASSINATURA,
+  # NOTA_MANUAL). Vazio = só os modelos .j2.
+  textos: {}
+  contexto:
+    analista: ""                  # nome do analista (assinatura e aviso)
   link_forms_po: "https://forms.office.com/r/LINK-A-DEFINIR"
   assinatura: "Equipe Financeiro – Contas a Pagar"
   # Texto exibido no topo das mensagens geradas. Útil em dev/piloto para
@@ -231,6 +282,10 @@ registro:
   nivel_log: "INFO"
   banco_estado: "dados/estado.db"            # idempotência + histórico (RNF01)
   planilha_controle: "dados/registro_controle.xlsx"   # RF10 / RNF03
+  # v0.3.0 – critério de liberação por categoria (§12.8 – A CONFIRMAR). Só
+  # informativo na aba Resumo da planilha de controle.
+  criterio_acerto: 0.95
+  criterio_minimo_avaliados: 20
 
 extracao:
   # Trecho do histórico guardado em historico_resumido (contexto para a IA – E1)
