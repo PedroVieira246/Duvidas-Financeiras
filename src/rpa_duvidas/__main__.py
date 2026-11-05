@@ -24,7 +24,7 @@ from .caixa.base import ErroCaixa
 from .ciclo import Robo
 from .classificacao import criar_classificador
 from .config import Config, ErroConfiguracao, carregar, expandir
-from .filtros import ListaFornecedores
+from .filtros import ListaFornecedores, ler_planilha_escritorios
 from .registro import ExecucaoEmAndamento, Registro, configurar_log, trava
 from .respostas import GeradorRespostas
 from .tutoriais import RepositorioTutoriais
@@ -56,8 +56,19 @@ def montar_dependencias(cfg: Config, caixa=None):
         tutoriais=tutoriais,
         respostas=respostas,
         fornecedores=fornecedores,
+        fonte_escritorios=fonte_escritorios(cfg),
     )
     return robo
+
+
+def fonte_escritorios(cfg: Config):
+    """v0.3.0 – leitor da planilha de escritórios (None quando ``escritorios.arquivo`` está vazio)."""
+    if not cfg.get("escritorios.arquivo"):
+        return None
+    return lambda: ler_planilha_escritorios(
+        cfg.caminho("escritorios.arquivo"), str(cfg.get("escritorios.aba", "") or ""),
+        str(cfg.get("escritorios.coluna_dominio", "Domínio")), str(cfg.get("escritorios.coluna_escritorio", "Escritório")),
+    )
 
 
 def _pastas_modelos_personalizados(cfg: Config):
@@ -96,7 +107,7 @@ def cmd_executar(args) -> int:
                     resumo = robo.executar_ciclo()
                     if robo.registro.exportar_planilha(cfg.caminho("registro.planilha_controle")):
                         log.info("Planilha de controle atualizada: %s", cfg.caminho("registro.planilha_controle"))
-                    codigo = 2 if resumo.contagem()["erros"] else 0
+                    codigo = 1 if resumo.falha else 2 if resumo.contagem()["erros"] else 0
                 finally:
                     robo.registro.fechar()
                     robo.caixa.fechar()

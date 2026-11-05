@@ -28,13 +28,13 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from . import extracao
 from .caixa.base import CaixaEmail
 from .classificacao.base import Classificador
 from .config import Config
-from .filtros import FiltroInterno, FiltroSpam, ListaFornecedores
+from .filtros import ErroEscritorios, FiltroInterno, FiltroSpam, ListaFornecedores, MapaEscritorios
 from .modelos import (Acao, Categoria, Classificacao, Destino, EmailRecebido, MotivoIgnorado, MotivoManual,
                       Resultado, Status)
 from .registro import Registro
@@ -54,6 +54,9 @@ class ResumoCiclo:
     modo: str
     inicio: datetime = field(default_factory=datetime.now)
     resultados: List[Resultado] = field(default_factory=list)
+    # v0.3.0: e-mails de não fornecedores deixados intactos (seção 6.1) e falha que impediu o ciclo
+    nao_fornecedores: int = 0
+    falha: str = ""
 
     def contagem(self) -> Dict[str, int]:
         c = {"lidos": len(self.resultados), "respondidos": 0, "encaminhados": 0, "ignorados": 0, "erros": 0, "reconciliados": 0}
@@ -85,6 +88,7 @@ class Robo:
         fornecedores: ListaFornecedores,
         filtro_interno: Optional[FiltroInterno] = None,
         filtro_spam: Optional[FiltroSpam] = None,
+        fonte_escritorios: Optional[Callable[[], MapaEscritorios]] = None,
     ):
         self.cfg = cfg
         self.caixa = caixa
@@ -104,12 +108,33 @@ class Robo:
             [cfg.get("caixa.conta", ""), cfg.get("caixa.enviar_em_nome_de", "")],
         )
         self.filtro_spam = filtro_spam or FiltroSpam.de_config(cfg.get("filtros.spam", {}))
+        # v0.3.0 – planilha de escritórios (lida a cada ciclo – seção 5.9)
+        self.fonte_escritorios = fonte_escritorios
+        self.escritorios: Optional[MapaEscritorios] = None
+
+    def atualizar_escritorios(self) -> None:
+        """Relê a planilha de escritórios e troca a lista de fornecedores. Erro → ``ErroEscritorios``."""
+        if self.fonte_escritorios is None:
+            return
+        self.escritorios = self.fonte_escritorios()
+        self.fornecedores = self.escritorios.lista_fornecedores()
+        for aviso in self.escritorios.avisos:
+            log.warning("Planilha de escritórios: %s", aviso)
 
     # ------------------------------------------------------------------ #
     def executar_ciclo(self) -> ResumoCiclo:
         resumo = ResumoCiclo(ciclo_id=f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:4]}", modo=self.modo)
         lote = int(self.cfg.get("caixa.lote_maximo", 50))
         log.info("Ciclo %s iniciado | perfil=%s | modo=%s | lote=%d", resumo.ciclo_id, self.cfg.perfil, self.modo, lote)
+        try:
+            self.atualizar_escritorios()
+        except ErroEscritorios as erro:              # seção 5.9: sem a planilha, o ciclo não roda
+            resumo.falha = str(erro)
+            log.error("Ciclo %s não executado: %s", resumo.ciclo_id, erro)
+            self._avisar_falha_ciclo(str(erro))
+            self.registro.gravar_ciclo(resumo.ciclo_id, self.modo, resumo.inicio, resumo.contagem(),
+                                       obs=f"NÃO EXECUTADO: {erro}"[:500])
+            return resumo
         if hasattr(self.classificador, "iniciar_ciclo"):
             self.classificador.iniciar_ciclo()          # zera o contador de falhas da IA (RNF-IA03)
         emails = self.caixa.ler_pendentes(lote)
@@ -140,6 +165,8 @@ class Robo:
             anterior = self.registro.estado(email.chave)
             if anterior is not None and self._deve_reconciliar(anterior):
                 return self._reconciliar(email, anterior, r)
+            if self.escritorios is not None:
+                email.escritorio = self.escritorios.escritorio(email.remetente)
             extracao.processar(
                 email, self.cfg.get("extracao", {}) or {}, self.cfg.get("filtros.assuntos_resposta_automatica", []),
                 self.marcas_rpa,
@@ -273,6 +300,23 @@ class Robo:
             self.caixa.enviar_novo(para, assunto, corpo, enviar=self.envio_real)
         except Exception:
             log.exception("Falha ao enviar o aviso de IA indisponível")
+
+    def _avisar_falha_ciclo(self, mensagem: str) -> None:
+        """Aviso de ciclo não executado – no máximo um por dia para o mesmo erro."""
+        para = list(self.cfg.get("destinatarios.avisos_erro", []) or [])
+        if not para:
+            log.warning("destinatarios.avisos_erro vazio – aviso de ciclo não executado não enviado")
+            return
+        chave = f"falha_ciclo:{datetime.now():%Y-%m-%d}:{mensagem[:200]}"
+        try:
+            if self.registro.ja_avisado(chave):
+                return
+            self._verificar_destinatarios(para)
+            corpo = self.respostas.aviso_falha_ciclo(mensagem)
+            self.caixa.enviar_novo(para, "[RPA Dúvidas Financeiras] Ciclo não executado", corpo, enviar=self.envio_real)
+            self.registro.registrar_aviso(chave)
+        except Exception:
+            log.exception("Falha ao enviar o aviso de ciclo não executado")
 
     # ---- ações ----------------------------------------------------------- #
     def _verificar_destinatarios(self, enderecos: List[str]) -> None:

@@ -42,6 +42,12 @@ COLUNAS_EVENTO = [
     ("modelo_ia", "Modelo da IA"), ("versao_prompt", "Versão do prompt"), ("hash_prompt", "Hash do prompt"),
     ("latencia_ia_ms", "Latência IA (ms)"), ("tentativas_ia", "Tentativas IA"), ("tokens", "Tokens"),
 ]
+# v0.3.0 – calibração (seção 8). Lista separada para a migração da v0.2.x continuar
+# reportando só as colunas dela; o banco e a planilha usam COLUNAS_REGISTRO.
+COLUNAS_V030 = [
+    ("escritorio", "Escritório"),
+]
+COLUNAS_REGISTRO = COLUNAS_EVENTO + COLUNAS_V030
 # Colunas que entraram depois da v0.1.0 chegam a um banco antigo por ALTER TABLE (migrar – lacuna R7)
 
 _SQL = f"""
@@ -64,6 +70,9 @@ CREATE TABLE IF NOT EXISTS respostas_ia (
     data_hora TEXT, ciclo_id TEXT, protocolo TEXT, id_mensagem TEXT,
     modelo TEXT, versao_prompt TEXT, hash_prompt TEXT,
     chamada INTEGER, valida INTEGER, resposta_bruta TEXT
+);
+CREATE TABLE IF NOT EXISTS avisos (
+    chave TEXT PRIMARY KEY, enviado_em TEXT
 );
 CREATE TABLE IF NOT EXISTS ciclos (
     ciclo_id TEXT PRIMARY KEY, perfil TEXT, modo TEXT, inicio TEXT, fim TEXT,
@@ -126,11 +135,12 @@ def trava(caminho: Path, validade_min: int = 120) -> Iterator[None]:
 # --------------------------------------------------------------------------- #
 # migração de banco existente (lacuna R7)
 # --------------------------------------------------------------------------- #
-def migrar(con: sqlite3.Connection) -> List[str]:
+def migrar(con: sqlite3.Connection, colunas=None) -> List[str]:
     """Acrescenta em ``eventos`` as colunas que faltam (``CREATE TABLE IF NOT EXISTS``
     não altera tabela que já existe). Idempotente. Devolve as colunas criadas."""
+    colunas = COLUNAS_EVENTO if colunas is None else colunas
     existentes = {row[1] for row in con.execute("PRAGMA table_info(eventos)")}
-    novas = [c for c, _ in COLUNAS_EVENTO if c not in existentes]
+    novas = [c for c, _ in colunas if c not in existentes]
     for coluna in novas:
         con.execute(f"ALTER TABLE eventos ADD COLUMN {coluna} TEXT")
     if novas:
@@ -154,6 +164,7 @@ class Registro:
         self.con.row_factory = sqlite3.Row
         self.con.executescript(_SQL)
         self.colunas_migradas = migrar(self.con)
+        self.colunas_migradas_v030 = migrar(self.con, COLUNAS_V030)
         self.con.commit()
 
     def fechar(self) -> None:
@@ -206,6 +217,7 @@ class Registro:
             "motivo_manual": (c.motivo_manual or "") if c else "", "acao": r.acao,
             "arquivo_enviado": r.arquivo_enviado, "destinatarios": "; ".join(r.destinatarios),
             "destino": r.destino, "status": r.status, "erro": r.erro, "duracao_ms": str(r.duracao_ms),
+            "escritorio": e.escritorio,
         }
         if not c and r.motivo_ignorado:
             linha["motivo"] = r.motivo_ignorado
@@ -225,7 +237,7 @@ class Registro:
             "tentativas_ia": str(d.get("tentativas")) if ia and d.get("tentativas") is not None else "",
             "tokens": str(d.get("tokens")) if ia and d.get("tokens") is not None else "",
         })
-        cols = [k for k, _ in COLUNAS_EVENTO]
+        cols = [k for k, _ in COLUNAS_REGISTRO]
         self.con.execute(
             f"INSERT INTO eventos ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
             [linha[k] for k in cols],
@@ -258,6 +270,15 @@ class Registro:
         )
         self.con.commit()
 
+    # ---- avisos únicos (v0.3.0) ------------------------------------------ #
+    def ja_avisado(self, chave: str) -> bool:
+        return self.con.execute("SELECT 1 FROM avisos WHERE chave = ?", (chave,)).fetchone() is not None
+
+    def registrar_aviso(self, chave: str) -> None:
+        self.con.execute("INSERT OR REPLACE INTO avisos VALUES (?, ?)",
+                         (chave, datetime.now().isoformat(timespec="seconds")))
+        self.con.commit()
+
     def eventos(self) -> List[sqlite3.Row]:
         return self.con.execute("SELECT * FROM eventos ORDER BY id").fetchall()
 
@@ -273,9 +294,9 @@ class Registro:
         wb = Workbook()
         ws = wb.active
         ws.title = "Registro"
-        ws.append([titulo for _, titulo in COLUNAS_EVENTO])
+        ws.append([titulo for _, titulo in COLUNAS_REGISTRO])
         for row in self.eventos():
-            ws.append([row[c] for c, _ in COLUNAS_EVENTO])
+            ws.append([row[c] for c, _ in COLUNAS_REGISTRO])
         cab = PatternFill("solid", fgColor="1F3864")
         for cel in ws[1]:
             cel.font = Font(bold=True, color="FFFFFF")
@@ -283,7 +304,7 @@ class Registro:
             cel.alignment = Alignment(vertical="center", wrap_text=True)
         larguras = {"Assunto": 40, "Motivo da classificação": 50, "Erro": 40, "ID da mensagem": 30, "Destinatários": 30,
                     "Resumo da dúvida (IA)": 50}
-        for i, (_, titulo) in enumerate(COLUNAS_EVENTO, start=1):
+        for i, (_, titulo) in enumerate(COLUNAS_REGISTRO, start=1):
             ws.column_dimensions[get_column_letter(i)].width = larguras.get(titulo, 16)
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions

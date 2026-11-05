@@ -94,6 +94,10 @@ class GeradorRespostas:
         """Aviso único aos analistas quando a IA é desligada no ciclo (RNF-IA03)."""
         return self._render("aviso_ia_indisponivel.html.j2", falhas=falhas)
 
+    def aviso_falha_ciclo(self, mensagem: str) -> str:
+        """v0.3.0 – o ciclo não rodou (ex.: planilha de escritórios indisponível – seção 5.9)."""
+        return self._render("aviso_falha_ciclo.html.j2", mensagem=mensagem)
+
     def aviso_erro(self, email: EmailRecebido, erro: str, categoria: str, pasta_erro: str, movido: bool = True) -> str:
         return self._render(
             "aviso_erro.html.j2",

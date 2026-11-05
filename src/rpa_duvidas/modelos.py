@@ -109,6 +109,8 @@ class EmailRecebido:
     # v0.2.1: mensagem gerada pelo próprio RPA (filtros.mensagens_do_rpa)
     gerada_pelo_rpa: bool = False
     motivo_gerada_pelo_rpa: str = ""
+    # v0.3.0: escritório do remetente (planilha de escritórios – seção 6.3)
+    escritorio: str = ""
 
     @property
     def chave(self) -> str:
