@@ -1,0 +1,2 @@
+# Arquivos .bat mantêm CRLF (o cmd do Windows não lê bem arquivos com LF)
+*.bat -text
