@@ -3,6 +3,10 @@
     TEXTO PROVISÓRIO – aguardando redação/aprovação da área (solicitação S09).
     Variáveis disponíveis: faixa_ambiente, assinatura, protocolo, data,
     assunto, nome_remetente, link_forms, nome_arquivo, descricao_tutorial.
+    v0.3.0 (aba Textos da planilha, opcionais): aviso_automatico_html
+    (AVISO_AUTOMATICO – D09) e assinatura_html (ASSINATURA). Sem eles, vale o
+    texto fixo abaixo. O rodapé "Resposta automática · protocolo" é a marca
+    que impede o robô de responder às próprias mensagens: não remova.
     ===================================================================== -#}
 <div style="font-family:Segoe UI,Arial,sans-serif;font-size:11pt;color:#1e293b">
 {%- if faixa_ambiente %}
@@ -10,8 +14,12 @@
 {%- endif %}
 <p>Prezado(a) fornecedor(a),</p>
 {% block conteudo %}{% endblock %}
+{%- if aviso_automatico_html is defined and aviso_automatico_html %}
+{{ aviso_automatico_html }}
+{%- else %}
 <p>Se a sua dúvida não foi resolvida, basta responder a este e-mail que a nossa equipe dará continuidade ao atendimento.</p>
-<p>Atenciosamente,<br><b>{{ assinatura }}</b></p>
+{%- endif %}
+<p>Atenciosamente,<br><b>{% if assinatura_html is defined and assinatura_html %}{{ assinatura_html }}{% else %}{{ assinatura }}{% endif %}</b></p>
 <p style="color:#64748b;font-size:9pt">Resposta automática · protocolo {{ protocolo }} · {{ data }}</p>
 </div>
 <br>

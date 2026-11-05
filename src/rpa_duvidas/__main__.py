@@ -45,8 +45,10 @@ def montar_dependencias(cfg: Config, caixa=None):
             "assinatura": cfg.get("respostas.assinatura", ""),
             "faixa_ambiente": cfg.get("respostas.faixa_ambiente", ""),
             "link_forms": cfg.get("respostas.link_forms_po", ""),
+            "analista": cfg.get("respostas.contexto.analista", ""),
         },
         pastas_personalizadas=_pastas_modelos_personalizados(cfg),
+        textos=cfg.get("respostas.textos", {}) or {},
     )
     fornecedores = ListaFornecedores(cfg.yaml_referenciado("filtros.arquivo_fornecedores"))
     robo = Robo(

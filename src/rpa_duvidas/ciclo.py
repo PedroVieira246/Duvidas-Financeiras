@@ -64,7 +64,7 @@ class ResumoCiclo:
                 c["erros"] += 1
             elif r.status == Status.RECONCILIADO:
                 c["reconciliados"] += 1
-            elif r.acao in (Acao.RESPONDER_TUTORIAL, Acao.RESPONDER_FORMS):
+            elif r.acao in (Acao.RESPONDER_TUTORIAL, Acao.RESPONDER_FORMS, Acao.RESPONDER_TEXTO):
                 c["respondidos"] += 1
             elif r.acao == Acao.ENCAMINHAR_MANUAL:
                 c["encaminhados"] += 1
@@ -326,7 +326,9 @@ class Robo:
         r.classificacao = c
 
         # 4. ação
-        if c.categoria in Categoria.TUTORIAIS:
+        if str((self.categorias.get(c.categoria) or {}).get("acao", "")).upper() == Acao.RESPONDER_TEXTO:
+            self._responder_texto(email, c, r)                 # v0.3.0 – aba Categorias
+        elif c.categoria in Categoria.TUTORIAIS:
             self._responder_tutorial(email, c, r)
         elif c.categoria == Categoria.FORMS_PO:
             self._responder_forms(email, r)
@@ -442,18 +444,38 @@ class Robo:
         tutorial = self.tutoriais.localizar(c.categoria)          # RF06: falha → Erro
         r.arquivo_enviado = tutorial.nome
         cc = self._destinatarios_resposta(email, r)
+        cod_texto = self._codigo_texto(c.categoria)
         corpo = self.respostas.resposta(
             email, c.categoria, nome_arquivo=tutorial.nome, descricao_tutorial=tutorial.descricao,
-            destinatario_original=r.destinatario_original,
+            destinatario_original=r.destinatario_original, codigo_texto=cod_texto,
         )
-        self._responder(email, corpo, [tutorial.caminho], r, cc, codigo=c.categoria)
+        self._responder(email, corpo, [tutorial.caminho], r, cc, codigo=c.categoria,
+                        prefixo_assunto=self.respostas.prefixo_assunto(cod_texto, email))
+
+    def _codigo_texto(self, categoria: str) -> str:
+        return str((self.categorias.get(categoria) or {}).get("codigo_texto", "") or "")
+
+    def _responder_texto(self, email: EmailRecebido, c: Classificacao, r: Resultado) -> None:
+        """v0.3.0 – ação RESPONDER_TEXTO: resposta só com o texto da aba Textos, sem anexo."""
+        r.acao = Acao.RESPONDER_TEXTO
+        cod_texto = self._codigo_texto(c.categoria)
+        if not self.respostas.tem_texto(cod_texto):
+            raise RuntimeError(f"Categoria {c.categoria} com RESPONDER_TEXTO sem o texto {cod_texto!r} na aba Textos")
+        cc = self._destinatarios_resposta(email, r)
+        corpo = self.respostas.resposta(email, c.categoria, destinatario_original=r.destinatario_original,
+                                        codigo_texto=cod_texto)
+        self._responder(email, corpo, [], r, cc, codigo=c.categoria,
+                        prefixo_assunto=self.respostas.prefixo_assunto(cod_texto, email))
 
     def _responder_forms(self, email: EmailRecebido, r: Resultado) -> None:
         r.acao = Acao.RESPONDER_FORMS
         r.arquivo_enviado = "(link do Forms)"
         cc = self._destinatarios_resposta(email, r)
-        corpo = self.respostas.resposta(email, Categoria.FORMS_PO, destinatario_original=r.destinatario_original)
-        self._responder(email, corpo, [], r, cc, codigo=Categoria.FORMS_PO)
+        cod_texto = self._codigo_texto(Categoria.FORMS_PO)
+        corpo = self.respostas.resposta(email, Categoria.FORMS_PO, destinatario_original=r.destinatario_original,
+                                        codigo_texto=cod_texto)
+        self._responder(email, corpo, [], r, cc, codigo=Categoria.FORMS_PO,
+                        prefixo_assunto=self.respostas.prefixo_assunto(cod_texto, email))
 
     def _encaminhar_manual(self, email: EmailRecebido, c: Classificacao, r: Resultado) -> None:
         r.acao = Acao.ENCAMINHAR_MANUAL
