@@ -1,0 +1,53 @@
+# =============================================================================
+# Perfil CALIBRAÇÃO (v0.3.0) – .exe na máquina do analista, lendo a caixa
+# PESSOAL (D01). Seção 4.3 da especificação técnica v0.3.0.
+#
+# O que o analista e a BT editam fica no config\configuracao.xlsx, ao lado do
+# .exe (obrigatório neste perfil). Este arquivo só fixa o que NÃO pode mudar
+# na calibração:
+#   * as respostas vão para o e-mail destino padrão, nunca ao fornecedor (D02);
+#   * IA desligada (D04);
+#   * nada é movido na caixa pessoal (D01).
+# =============================================================================
+
+ambiente: calibracao
+
+configuracao_xlsx:
+  obrigatoria: true
+  arquivo: "config/configuracao.xlsx"
+
+caixa:
+  tipo: outlook_com
+  pasta_entrada: "@inbox"
+  filtro_assunto: ""          # e-mails reais: sem filtro de assunto
+  mover_apos_tratar: false    # D01: caixa de trabalho do analista
+  ler_todos_da_pasta: true
+  criar_pastas_ausentes: false
+  marcar_nao_fornecedores: false
+  pular_ja_respondidos: true
+  lote_maximo: 20
+  max_varredura: 300
+
+execucao:
+  envio_real: false           # o modo efetivo vem da aba Geral (modo_execucao)
+  destino_respostas: TESTE    # D02 – valor único aceito na v0.3.0
+
+classificacao:
+  tipo: palavras_chave        # D04 – IA desligada
+
+seguranca:
+  destinatarios_permitidos: []  # montado a partir do e-mail destino padrão + AVISO_ERRO (seção 6.2)
+
+destinatarios:
+  acao_manual: CATEGORIZAR
+
+respostas:
+  faixa_ambiente: "[CALIBRAÇÃO – resposta automática de teste. No envio real, este e-mail iria para: {destinatario_original}]"
+
+arquivamento:
+  raiz: "arquivo"
+
+registro:
+  nivel_log: "INFO"
+  banco_estado: "dados/estado.db"
+  planilha_controle: "dados/registro_controle.xlsx"
