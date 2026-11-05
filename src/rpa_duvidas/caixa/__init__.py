@@ -36,6 +36,7 @@ def criar_caixa(cfg: Config) -> CaixaEmail:
             pasta_entrada=cfg.exigir("caixa.pasta_entrada"),
             pastas_destino=destinos,
             criar=criar,
+            mover_apos_tratar=bool(cfg.get("caixa.mover_apos_tratar", True)),
         )
     if tipo == "outlook_com":
         from .outlook_com import CaixaOutlookCOM

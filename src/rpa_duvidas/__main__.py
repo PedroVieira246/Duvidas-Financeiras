@@ -24,7 +24,7 @@ from .caixa.base import ErroCaixa
 from .ciclo import Robo
 from .classificacao import criar_classificador
 from .config import Config, ErroConfiguracao, carregar, expandir
-from .filtros import ListaFornecedores, ler_planilha_escritorios
+from .filtros import ErroEscritorios, ListaFornecedores, ler_planilha_escritorios
 from .registro import ExecucaoEmAndamento, Registro, configurar_log, trava
 from .respostas import GeradorRespostas
 from .tutoriais import RepositorioTutoriais
@@ -209,14 +209,20 @@ def cmd_previa(args) -> int:
     interno: FiltroInterno = robo.filtro_interno
     spam: FiltroSpam = robo.filtro_spam
     try:
-        emails = robo.caixa.ler_pendentes(int(cfg.get("caixa.lote_maximo", 50)))
+        robo.atualizar_escritorios()
+        emails = robo.ler_pendentes(int(cfg.get("caixa.lote_maximo", 50)))
         print(f"\n{len(emails)} e-mail(s) na pasta de entrada (nenhuma ação será executada)\n")
+        if not robo.marcar_nao_fornecedores:
+            print(f"{getattr(robo.caixa, 'descartados', 0)} e-mail(s) de não fornecedores ignorados sem alteração\n")
+        from .modelos import VERBOS_JA_TRATADO
         for e in emails:
             extracao.processar(e, cfg.get("extracao", {}) or {}, cfg.get("filtros.assuntos_resposta_automatica", []),
                                cfg.get("filtros.mensagens_do_rpa", {}) or {})
             eh_interno, det_interno = interno.interno(e.remetente)
             eh_spam, det_spam = spam.spam(e.cabecalhos)
-            if e.resposta_automatica:
+            if robo.pular_ja_respondidos and e.ultimo_verbo in VERBOS_JA_TRATADO:
+                destino = "IGNORAR – JÁ TRATADO PELO ANALISTA"
+            elif e.resposta_automatica:
                 destino = f"IGNORAR ({e.motivo_resposta_automatica})"
             elif e.gerada_pelo_rpa:
                 destino = f"IGNORAR – PRÓPRIO RPA ({e.motivo_gerada_pelo_rpa})"
@@ -290,7 +296,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
     try:
         return args.func(args)
-    except (ErroConfiguracao, ErroCaixa) as erro:
+    except (ErroConfiguracao, ErroCaixa, ErroEscritorios) as erro:
         logging.getLogger("rpa_duvidas").error(str(erro))
         print(f"\nERRO: {erro}", file=sys.stderr)
         return 1

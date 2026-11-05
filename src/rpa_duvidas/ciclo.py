@@ -35,8 +35,8 @@ from .caixa.base import CaixaEmail
 from .classificacao.base import Classificador
 from .config import Config
 from .filtros import ErroEscritorios, FiltroInterno, FiltroSpam, ListaFornecedores, MapaEscritorios
-from .modelos import (Acao, Categoria, Classificacao, Destino, EmailRecebido, MotivoIgnorado, MotivoManual,
-                      Resultado, Status)
+from .modelos import (VERBOS_JA_TRATADO, Acao, Categoria, Classificacao, Destino, EmailRecebido, MotivoIgnorado,
+                      MotivoManual, Resultado, Status)
 from .registro import Registro
 from .respostas import GeradorRespostas, protocolo
 from .tutoriais import RepositorioTutoriais
@@ -111,6 +111,21 @@ class Robo:
         # v0.3.0 – planilha de escritórios (lida a cada ciclo – seção 5.9)
         self.fonte_escritorios = fonte_escritorios
         self.escritorios: Optional[MapaEscritorios] = None
+        # v0.3.0 – caixa pessoal (seção 6.1)
+        self.marcar_nao_fornecedores = bool(cfg.get("caixa.marcar_nao_fornecedores", True))
+        self.pular_ja_respondidos = bool(cfg.get("caixa.pular_ja_respondidos", False))
+
+    def eh_fornecedor(self, remetente: str) -> bool:
+        """Remetente que o robô pode tratar: não interno e (se exigido) na lista de fornecedores."""
+        if not remetente or self.filtro_interno.interno(remetente)[0]:
+            return False
+        return (not self.cfg.get("filtros.validar_fornecedor", True)) or self.fornecedores.conhecido(remetente)
+
+    def ler_pendentes(self, lote: int) -> List[EmailRecebido]:
+        """Com ``marcar_nao_fornecedores = N``, o filtro de remetente roda na varredura (antes do lote)."""
+        if self.marcar_nao_fornecedores:
+            return self.caixa.ler_pendentes(lote)
+        return self.caixa.ler_pendentes(lote, aceitar_remetente=self.eh_fornecedor)
 
     def atualizar_escritorios(self) -> None:
         """Relê a planilha de escritórios e troca a lista de fornecedores. Erro → ``ErroEscritorios``."""
@@ -137,7 +152,11 @@ class Robo:
             return resumo
         if hasattr(self.classificador, "iniciar_ciclo"):
             self.classificador.iniciar_ciclo()          # zera o contador de falhas da IA (RNF-IA03)
-        emails = self.caixa.ler_pendentes(lote)
+        emails = self.ler_pendentes(lote)
+        if not self.marcar_nao_fornecedores:
+            resumo.nao_fornecedores = int(getattr(self.caixa, "descartados", 0) or 0)
+            if resumo.nao_fornecedores:
+                log.info("%d e-mail(s) de não fornecedores deixados sem alteração", resumo.nao_fornecedores)
         log.info("%d e-mail(s) pendente(s)", len(emails))
         for email in emails:
             inicio = time.perf_counter()
@@ -154,8 +173,10 @@ class Robo:
                 f"| erro: {r.erro}" if r.erro else "",
             )
             resumo.resultados.append(r)
-        self.registro.gravar_ciclo(resumo.ciclo_id, self.modo, resumo.inicio, resumo.contagem())
-        log.info("Ciclo %s concluído: %s", resumo.ciclo_id, resumo.contagem())
+        self.registro.gravar_ciclo(resumo.ciclo_id, self.modo, resumo.inicio, resumo.contagem(),
+                                   nao_fornecedores=resumo.nao_fornecedores)
+        log.info("Ciclo %s concluído: %s | não fornecedores: %d", resumo.ciclo_id, resumo.contagem(),
+                 resumo.nao_fornecedores)
         return resumo
 
     # ------------------------------------------------------------------ #
@@ -218,6 +239,15 @@ class Robo:
 
     # ------------------------------------------------------------------ #
     def _tratar(self, email: EmailRecebido, r: Resultado) -> None:
+        # 0. o analista já respondeu ou encaminhou (v0.3.0 – seção 6.1): só a categoria
+        if self.pular_ja_respondidos and email.ultimo_verbo in VERBOS_JA_TRATADO:
+            r.acao, r.destino = Acao.IGNORAR, Destino.IGNORADOS
+            r.motivo_ignorado = f"{MotivoIgnorado.JA_TRATADO_PELO_ANALISTA}: última ação no Outlook = {email.ultimo_verbo}"
+            self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
+            self.caixa.finalizar(email, Destino.IGNORADOS, self.cats.get("ignorado"), marcar_lido=False)
+            r.status = Status.IGNORADO
+            return
+
         # 1. resposta automática (RF03)
         if email.resposta_automatica:
             r.acao, r.destino = Acao.IGNORAR, Destino.IGNORADOS

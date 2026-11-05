@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 from ..modelos import EmailRecebido
 
@@ -20,9 +20,17 @@ class ErroCaixa(Exception):
 class CaixaEmail(ABC):
     """Operações que o robô faz sobre uma caixa de e-mail."""
 
+    #: v0.3.0 – quantos itens o último ``ler_pendentes`` deixou de lado por ``aceitar_remetente``
+    descartados: int = 0
+
     @abstractmethod
-    def ler_pendentes(self, limite: int) -> List[EmailRecebido]:
-        """Devolve até ``limite`` e-mails da pasta de entrada, mais antigos primeiro."""
+    def ler_pendentes(self, limite: int, aceitar_remetente: Optional[Callable[[str], bool]] = None) -> List[EmailRecebido]:
+        """Devolve até ``limite`` e-mails da pasta de entrada, mais antigos primeiro.
+
+        v0.3.0: ``aceitar_remetente(smtp)`` é aplicado durante a varredura, ANTES
+        do corte do lote. Os itens recusados não são convertidos nem alterados
+        (caixa pessoal – seção 6.1) e só contam em ``descartados``.
+        """
 
     @abstractmethod
     def responder(
@@ -57,8 +65,12 @@ class CaixaEmail(ABC):
         """Mensagem nova (ex.: aviso de erro aos analistas)."""
 
     @abstractmethod
-    def finalizar(self, email: EmailRecebido, destino: str, categoria: Optional[str] = None) -> None:
+    def finalizar(self, email: EmailRecebido, destino: str, categoria: Optional[str] = None, *,
+                  marcar_lido: bool = True) -> None:
         """Marca como lido, aplica categoria e move para a pasta ``destino`` (RF09).
+
+        v0.3.0: ``marcar_lido=False`` só aplica a categoria (e-mail que o analista
+        já tratou – seção 6.1).
 
         ``destino`` é a chave de ``caixa.pastas_destino`` (respondidos,
         encaminhados, erro, ignorados).

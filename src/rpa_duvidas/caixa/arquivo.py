@@ -39,8 +39,10 @@ from .base import CaixaEmail, ErroCaixa
 
 
 class CaixaArquivo(CaixaEmail):
-    def __init__(self, raiz: Path, pasta_entrada: str, pastas_destino: Dict[str, str], criar: bool = True):
+    def __init__(self, raiz: Path, pasta_entrada: str, pastas_destino: Dict[str, str], criar: bool = True,
+                 mover_apos_tratar: bool = True):
         self.raiz = Path(raiz)
+        self.mover = bool(mover_apos_tratar)   # v0.3.0: False imita a caixa pessoal (nada sai da entrada)
         self.entrada = self.raiz / pasta_entrada
         self.destinos = {k: self.raiz / v for k, v in pastas_destino.items()}
         self.saida = self.raiz / "saida"
@@ -53,9 +55,10 @@ class CaixaArquivo(CaixaEmail):
     # ------------------------------------------------------------------ #
     # leitura
     # ------------------------------------------------------------------ #
-    def ler_pendentes(self, limite: int) -> List[EmailRecebido]:
+    def ler_pendentes(self, limite: int, aceitar_remetente=None) -> List[EmailRecebido]:
         if not self.entrada.exists():
             raise ErroCaixa(f"Pasta de entrada não existe: {self.entrada}")
+        self.descartados = 0
         emails: List[EmailRecebido] = []
         for arq in sorted(self.entrada.iterdir()):
             if arq.suffix.lower() == ".json":
@@ -65,6 +68,11 @@ class CaixaArquivo(CaixaEmail):
             else:
                 continue
             em = _dict_para_email(bruto, arq)
+            if bruto.get("categorias_outlook") and not self.mover:
+                continue                                  # modo sem mover: já tratado
+            if aceitar_remetente is not None and not aceitar_remetente(em.remetente):
+                self.descartados += 1                     # não fornecedor: arquivo intocado
+                continue
             self._arquivos[em.chave] = arq
             self._brutos[em.chave] = bruto
             emails.append(em)
@@ -108,7 +116,8 @@ class CaixaArquivo(CaixaEmail):
             anexos=[], enviar=enviar, em_resposta_a="",
         )
 
-    def finalizar(self, email: EmailRecebido, destino: str, categoria: Optional[str] = None) -> None:
+    def finalizar(self, email: EmailRecebido, destino: str, categoria: Optional[str] = None, *,
+                  marcar_lido: bool = True) -> None:
         self._falha(email, "finalizar")
         arq = self._arquivos.get(email.chave)
         if arq is None or not arq.exists():
@@ -119,10 +128,13 @@ class CaixaArquivo(CaixaEmail):
         pasta.mkdir(parents=True, exist_ok=True)
         if arq.suffix.lower() == ".json":
             bruto = json.loads(arq.read_text(encoding="utf-8"))
-            bruto["lido"] = True
+            if marcar_lido:
+                bruto["lido"] = True
             if categoria:
                 bruto.setdefault("categorias_outlook", []).append(categoria)
             arq.write_text(json.dumps(bruto, ensure_ascii=False, indent=2), encoding="utf-8")
+        if not self.mover:
+            return                                        # v0.3.0 – modo sem mover: fica na entrada
         alvo = pasta / arq.name
         if alvo.exists():
             alvo = pasta / f"{arq.stem}_{uuid.uuid4().hex[:6]}{arq.suffix}"
@@ -194,6 +206,7 @@ def _dict_para_email(d: dict, arq: Path) -> EmailRecebido:
         cabecalhos={str(k).lower(): str(v) for k, v in (d.get("cabecalhos") or {}).items()},
         classe_mensagem=str(d.get("classe_mensagem", "IPM.Note")),
         id_conversa=str(d.get("id_conversa", "")),
+        ultimo_verbo=int(d.get("ultimo_verbo") or 0),
     )
 
 

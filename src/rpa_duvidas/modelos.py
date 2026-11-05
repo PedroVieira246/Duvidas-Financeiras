@@ -56,6 +56,11 @@ class MotivoIgnorado:
     INTERNO = "INTERNO"     # RN2.2: remetente interno (domínio da Companhia ou a própria caixa)
     SPAM = "SPAM"           # RN2.3: cabeçalho SCL do Exchange acima do limite
     PROPRIO_RPA = "PROPRIO_RPA"  # v0.2.1: resposta/encaminhamento/aviso gerado pelo próprio RPA (evita laço)
+    JA_TRATADO_PELO_ANALISTA = "JA_TRATADO_PELO_ANALISTA"  # v0.3.0: o analista já respondeu/encaminhou (seção 6.1)
+
+
+# v0.3.0 – PR_LAST_VERB_EXECUTED: 102 respondido, 103 responder a todos, 104 encaminhado
+VERBOS_JA_TRATADO = (102, 103, 104)
 
 
 class Acao:
@@ -111,6 +116,8 @@ class EmailRecebido:
     motivo_gerada_pelo_rpa: str = ""
     # v0.3.0: escritório do remetente (planilha de escritórios – seção 6.3)
     escritorio: str = ""
+    # v0.3.0: última ação do usuário no e-mail (PR_LAST_VERB_EXECUTED; 0 = nenhuma)
+    ultimo_verbo: int = 0
 
     @property
     def chave(self) -> str:

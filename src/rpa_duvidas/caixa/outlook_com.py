@@ -50,6 +50,7 @@ PR_TRANSPORT_HEADERS = "http://schemas.microsoft.com/mapi/proptag/0x007D001F"
 PR_ATTACH_CONTENT_ID = "http://schemas.microsoft.com/mapi/proptag/0x3712001F"
 PR_SMTP_ADDRESS = "http://schemas.microsoft.com/mapi/proptag/0x39FE001F"
 PR_SENDER_SMTP = "http://schemas.microsoft.com/mapi/proptag/0x5D01001F"
+PR_LAST_VERB_EXECUTED = "http://schemas.microsoft.com/mapi/proptag/0x10810003"   # v0.3.0 (seção 6.1)
 
 _RE_BODY = re.compile(r"(<body[^>]*>)", re.I)
 
@@ -219,7 +220,7 @@ class CaixaOutlookCOM(CaixaEmail):
         atuais = {c.strip().lower() for c in str(_prop(item, "Categories", "") or "").split(",") if c.strip()}
         return bool(atuais & self.categorias_rpa)
 
-    def _selecionar_filtrado(self, limite: int) -> List[Any]:
+    def _selecionar_filtrado(self, limite: int, aceitar=None) -> List[Any]:
         """Examina os itens mais recentes primeiro e devolve os aceitos, mais antigos primeiro.
 
         Assim uma Caixa de Entrada grande não é lida inteira e e-mails já
@@ -242,13 +243,20 @@ class CaixaOutlookCOM(CaixaEmail):
                 continue
             if not self.mover and self._ja_tratado(item):
                 continue
+            if aceitar is not None:
+                classe = int(_prop(item, "Class", CLASSE_MAIL) or CLASSE_MAIL)
+                remetente = self._smtp_remetente(item) if classe == CLASSE_MAIL else ""
+                if not aceitar(remetente):
+                    self.descartados += 1          # não fornecedor: não é convertido nem alterado
+                    continue
             aceitos.append(item)
         aceitos.reverse()                              # processa na ordem de chegada
         return aceitos[: max(0, int(limite))]
 
-    def ler_pendentes(self, limite: int) -> List[EmailRecebido]:
-        if self._leitura_filtrada:
-            snapshot = self._selecionar_filtrado(limite)
+    def ler_pendentes(self, limite: int, aceitar_remetente=None) -> List[EmailRecebido]:
+        self.descartados = 0
+        if self._leitura_filtrada or aceitar_remetente is not None:
+            snapshot = self._selecionar_filtrado(limite, aceitar_remetente)
         else:
             itens = self.pasta_entrada.Items
             itens.Sort("[ReceivedTime]", False)
@@ -284,7 +292,15 @@ class CaixaOutlookCOM(CaixaEmail):
             cabecalhos=parse_cabecalhos(_prop_mapi(item, PR_TRANSPORT_HEADERS)),
             classe_mensagem=str(_prop(item, "MessageClass", "IPM.Note")),
             id_conversa=str(_prop(item, "ConversationID", "")),
+            ultimo_verbo=self._ultimo_verbo(item),
         )
+
+    @staticmethod
+    def _ultimo_verbo(item: Any) -> int:
+        try:
+            return int(_prop_mapi(item, PR_LAST_VERB_EXECUTED, "0") or 0)
+        except ValueError:
+            return 0
 
     @staticmethod
     def _anexos(item: Any):
@@ -382,13 +398,15 @@ class CaixaOutlookCOM(CaixaEmail):
         msg.HTMLBody = f"<html><body>{corpo_html}</body></html>"
         return self._concluir(msg, enviar)
 
-    def finalizar(self, email: EmailRecebido, destino: str, categoria: Optional[str] = None) -> None:
+    def finalizar(self, email: EmailRecebido, destino: str, categoria: Optional[str] = None, *,
+                  marcar_lido: bool = True) -> None:
         item = self._item(email)
         pasta = self._destino(destino) if self.mover else None
-        try:
-            item.UnRead = False
-        except Exception:
-            pass
+        if marcar_lido:
+            try:
+                item.UnRead = False
+            except Exception:
+                pass
         if categoria:
             self._garantir_categoria(categoria)
             atuais = [c.strip() for c in str(_prop(item, "Categories", "") or "").split(",") if c.strip()]

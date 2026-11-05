@@ -165,6 +165,8 @@ class Registro:
         self.con.executescript(_SQL)
         self.colunas_migradas = migrar(self.con)
         self.colunas_migradas_v030 = migrar(self.con, COLUNAS_V030)
+        if "nao_fornecedores" not in {r[1] for r in self.con.execute("PRAGMA table_info(ciclos)")}:
+            self.con.execute("ALTER TABLE ciclos ADD COLUMN nao_fornecedores INTEGER")   # v0.3.0
         self.con.commit()
 
     def fechar(self) -> None:
@@ -260,13 +262,15 @@ class Registro:
             )
         self.con.commit()
 
-    def gravar_ciclo(self, ciclo_id: str, modo: str, inicio: datetime, resumo: Dict[str, int], obs: str = "") -> None:
+    def gravar_ciclo(self, ciclo_id: str, modo: str, inicio: datetime, resumo: Dict[str, int], obs: str = "",
+                     nao_fornecedores: int = 0) -> None:
         self.con.execute(
-            """INSERT OR REPLACE INTO ciclos VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT OR REPLACE INTO ciclos (ciclo_id, perfil, modo, inicio, fim, lidos, respondidos, encaminhados,
+               ignorados, erros, reconciliados, observacao, nao_fornecedores) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (ciclo_id, self.perfil, modo, inicio.isoformat(timespec="seconds"),
              datetime.now().isoformat(timespec="seconds"), resumo.get("lidos", 0), resumo.get("respondidos", 0),
              resumo.get("encaminhados", 0), resumo.get("ignorados", 0), resumo.get("erros", 0),
-             resumo.get("reconciliados", 0), obs),
+             resumo.get("reconciliados", 0), obs, nao_fornecedores),
         )
         self.con.commit()
 
@@ -311,7 +315,7 @@ class Registro:
 
         wc = wb.create_sheet("Ciclos")
         colunas_ciclo = ["ciclo_id", "perfil", "modo", "inicio", "fim", "lidos", "respondidos",
-                         "encaminhados", "ignorados", "erros", "reconciliados", "observacao"]
+                         "encaminhados", "ignorados", "erros", "reconciliados", "observacao", "nao_fornecedores"]
         wc.append(colunas_ciclo)
         for row in self.con.execute("SELECT * FROM ciclos ORDER BY inicio"):
             wc.append([row[c] for c in colunas_ciclo])
