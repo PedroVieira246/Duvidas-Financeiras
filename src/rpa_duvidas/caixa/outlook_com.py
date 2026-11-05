@@ -33,7 +33,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence
 
 from ..extracao import parse_cabecalhos
 from ..modelos import EmailRecebido
-from .base import CaixaEmail, ErroCaixa
+from .base import CaixaEmail, ErroCaixa, ErroSeguranca, TravaDestinatarios
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ log = logging.getLogger(__name__)
 OL_FOLDER_INBOX = 6
 OL_ACCOUNT_EAS = 4        # OlAccountType.olEas (Exchange ActiveSync)
 OL_MAIL_ITEM = 0          # CreateItem
+OL_DISCARD = 1            # MailItem.Close(olDiscard)
 CLASSE_MAIL = 43
 CLASSE_REPORT = 46
 
@@ -109,6 +110,7 @@ class CaixaOutlookCOM(CaixaEmail):
         recebidos_desde: Optional[datetime] = None,
         max_varredura: int = 500,
         categorias_rpa: Sequence[str] = (),
+        trava: Optional[TravaDestinatarios] = None,
         namespace: Any = None,
         aplicativo: Any = None,
     ):
@@ -141,6 +143,7 @@ class CaixaOutlookCOM(CaixaEmail):
         self.categorias_rpa = {c.strip().lower() for c in categorias_rpa if c and c.strip()}
         self._caminhos_destino = dict(pastas_destino)
         self._itens: Dict[str, Any] = {}
+        self.trava = trava
 
         self.raiz, self.inbox = self._localizar_conta()
         self.pasta_entrada = self._resolver_pasta(pasta_entrada, criar=criar_pastas)
@@ -353,29 +356,85 @@ class CaixaOutlookCOM(CaixaEmail):
             enderecos += [self._smtp_destinatario(r) for r in _iterar(item.Recipients)]
         return [e for e in enderecos if e]
 
-    def _concluir(self, msg: Any, enviar: bool) -> str:
+    @staticmethod
+    def _smtp_envio(rec: Any) -> str:
+        """SMTP de um destinatário de mensagem NOVA (ainda não enviada). Vazio = não identificado."""
+        smtp = _prop_mapi(rec, PR_SMTP_ADDRESS)
+        if not smtp:
+            try:
+                usuario = rec.AddressEntry.GetExchangeUser()
+                smtp = str(usuario.PrimarySmtpAddress or "") if usuario is not None else ""
+            except Exception:
+                smtp = ""
+        if not smtp:
+            endereco = str(_prop(rec, "Address", "") or "")
+            smtp = endereco if "@" in endereco else ""
+        return smtp.strip().lower()
+
+    @staticmethod
+    def _limpar_destinatarios(msg: Any) -> None:
+        """Remove todos os destinatários (do último para o primeiro – seção 6.2, item 2)."""
+        for i in range(int(msg.Recipients.Count), 0, -1):
+            msg.Recipients.Remove(i)
+        for campo in ("CC", "BCC"):
+            try:
+                setattr(msg, campo, "")
+            except Exception:
+                pass
+
+    @staticmethod
+    def _descartar(msg: Any) -> None:
+        try:
+            msg.Close(OL_DISCARD)
+        except Exception:
+            pass
+
+    def _travar(self, msg: Any, operacao: str, extra: Optional[TravaDestinatarios]) -> None:
+        """Trava obrigatória (seção 6.2, item 4): relê ``Recipients`` imediatamente antes do Send/Save."""
+        travas = [t for t in (self.trava, extra) if t is not None]
+        if not travas:
+            return
+        enderecos = [self._smtp_envio(r) for r in _iterar(msg.Recipients)]
+        try:
+            for t in travas:
+                t.conferir(operacao, enderecos)
+        except ErroSeguranca:
+            self._descartar(msg)
+            raise
+
+    def _concluir(self, msg: Any, enviar: bool, operacao: str = "", extra: Optional[TravaDestinatarios] = None) -> str:
         try:
             msg.Recipients.ResolveAll()
         except Exception:
             pass
+        self._travar(msg, operacao, extra)
         if enviar:
             msg.Send()
             return "enviado"
         msg.Save()  # rascunho na pasta Rascunhos (RF11)
         return str(_prop(msg, "EntryID", "rascunho"))
 
-    def responder(self, email, corpo_html, *, anexos=(), cc=(), responder_todos=False, enviar=False) -> str:
+    def responder(self, email, corpo_html, *, anexos=(), cc=(), responder_todos=False, enviar=False,
+                  redirecionar_para=None, prefixo_assunto="") -> str:
         item = self._item(email)
         resp = item.ReplyAll() if responder_todos else item.Reply()
-        if cc:
+        extra = None
+        if redirecionar_para:
+            # envio de teste (D02): só o destino padrão, sem CC – a trava confere de novo no _concluir
+            self._limpar_destinatarios(resp)
+            resp.To = redirecionar_para
+            extra = TravaDestinatarios([redirecionar_para], [], [])
+        elif cc:
             atuais = [c.strip() for c in str(_prop(resp, "CC", "") or "").split(";") if c.strip()]
             resp.CC = "; ".join(atuais + [c for c in cc if c not in atuais])
         if self.enviar_em_nome_de:
             resp.SentOnBehalfOfName = self.enviar_em_nome_de
+        if prefixo_assunto:
+            resp.Subject = f"{prefixo_assunto} {_prop(resp, 'Subject', '')}".strip()
         resp.HTMLBody = inserir_no_body(resp.HTMLBody, corpo_html)
         for caminho in anexos:
             resp.Attachments.Add(str(Path(caminho)))
-        return self._concluir(resp, enviar)
+        return self._concluir(resp, enviar, "responder", extra)
 
     def encaminhar(self, email, para, prefixo_assunto, nota_html, *, enviar=False) -> str:
         item = self._item(email)
@@ -385,7 +444,7 @@ class CaixaOutlookCOM(CaixaEmail):
         if self.enviar_em_nome_de:
             enc.SentOnBehalfOfName = self.enviar_em_nome_de
         enc.HTMLBody = inserir_no_body(enc.HTMLBody, nota_html)
-        return self._concluir(enc, enviar)
+        return self._concluir(enc, enviar, "encaminhar")
 
     def enviar_novo(self, para, assunto, corpo_html, *, enviar=False) -> str:
         if self.app is None:
@@ -396,7 +455,7 @@ class CaixaOutlookCOM(CaixaEmail):
         if self.enviar_em_nome_de:
             msg.SentOnBehalfOfName = self.enviar_em_nome_de
         msg.HTMLBody = f"<html><body>{corpo_html}</body></html>"
-        return self._concluir(msg, enviar)
+        return self._concluir(msg, enviar, "enviar_novo")
 
     def finalizar(self, email: EmailRecebido, destino: str, categoria: Optional[str] = None, *,
                   marcar_lido: bool = True) -> None:

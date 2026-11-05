@@ -35,13 +35,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from ..modelos import EmailRecebido
-from .base import CaixaEmail, ErroCaixa
+from .base import CaixaEmail, ErroCaixa, TravaDestinatarios
 
 
 class CaixaArquivo(CaixaEmail):
     def __init__(self, raiz: Path, pasta_entrada: str, pastas_destino: Dict[str, str], criar: bool = True,
-                 mover_apos_tratar: bool = True):
+                 mover_apos_tratar: bool = True, trava: Optional[TravaDestinatarios] = None):
         self.raiz = Path(raiz)
+        self.trava = trava
         self.mover = bool(mover_apos_tratar)   # v0.3.0: False imita a caixa pessoal (nada sai da entrada)
         self.entrada = self.raiz / pasta_entrada
         self.destinos = {k: self.raiz / v for k, v in pastas_destino.items()}
@@ -86,13 +87,20 @@ class CaixaArquivo(CaixaEmail):
         if self._brutos.get(email.chave, {}).get("simular_falha") == etapa:
             raise ErroCaixa(f"Falha simulada em '{etapa}' (teste)")
 
-    def responder(self, email, corpo_html, *, anexos=(), cc=(), responder_todos=False, enviar=False) -> str:
+    def responder(self, email, corpo_html, *, anexos=(), cc=(), responder_todos=False, enviar=False,
+                  redirecionar_para=None, prefixo_assunto="") -> str:
         self._falha(email, "responder")
         assunto = email.assunto if email.assunto.lower().startswith("re:") else f"RE: {email.assunto}"
+        if prefixo_assunto:
+            assunto = f"{prefixo_assunto} {assunto}"
+        para, cc = ([redirecionar_para], []) if redirecionar_para else ([email.remetente], list(cc))
+        if redirecionar_para:
+            TravaDestinatarios([redirecionar_para], [], []).conferir("responder", para + cc)
         return self._gravar_saida(
-            tipo="RESPOSTA", para=[email.remetente], cc=list(cc), assunto=assunto,
+            tipo="RESPOSTA", para=para, cc=cc, assunto=assunto,
             corpo_html=corpo_html, anexos=[str(a) for a in anexos], enviar=enviar,
-            em_resposta_a=email.id_mensagem,
+            em_resposta_a=email.id_mensagem, operacao="responder",
+            destinatario_original=email.remetente if redirecionar_para else "",
         )
 
     def encaminhar(self, email, para, prefixo_assunto, nota_html, *, enviar=False) -> str:
@@ -107,13 +115,13 @@ class CaixaArquivo(CaixaEmail):
         return self._gravar_saida(
             tipo="ENCAMINHAMENTO", para=list(para), cc=[], assunto=f"{prefixo_assunto} {email.assunto}",
             corpo_html=nota_html + original, anexos=list(email.nomes_anexos), enviar=enviar,
-            em_resposta_a=email.id_mensagem,
+            em_resposta_a=email.id_mensagem, operacao="encaminhar",
         )
 
     def enviar_novo(self, para, assunto, corpo_html, *, enviar=False) -> str:
         return self._gravar_saida(
             tipo="AVISO", para=list(para), cc=[], assunto=assunto, corpo_html=corpo_html,
-            anexos=[], enviar=enviar, em_resposta_a="",
+            anexos=[], enviar=enviar, em_resposta_a="", operacao="enviar_novo",
         )
 
     def finalizar(self, email: EmailRecebido, destino: str, categoria: Optional[str] = None, *,
@@ -147,13 +155,17 @@ class CaixaArquivo(CaixaEmail):
     # ------------------------------------------------------------------ #
     # saída visual
     # ------------------------------------------------------------------ #
-    def _gravar_saida(self, *, tipo, para, cc, assunto, corpo_html, anexos, enviar, em_resposta_a) -> str:
+    def _gravar_saida(self, *, tipo, para, cc, assunto, corpo_html, anexos, enviar, em_resposta_a,
+                      operacao="", destinatario_original="") -> str:
+        if self.trava is not None:
+            self.trava.conferir(operacao, list(para) + list(cc))      # seção 6.2, item 4
         self.saida.mkdir(parents=True, exist_ok=True)
         ident = f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
         modo = "ENVIADO" if enviar else "RASCUNHO"
         dados = {
             "id": ident, "tipo": tipo, "modo": modo, "para": para, "cc": cc,
             "assunto": assunto, "anexos": [Path(a).name for a in anexos],
+            "destinatario_original": destinatario_original,
             "caminhos_anexos": anexos, "em_resposta_a": em_resposta_a,
             "gerado_em": datetime.now().isoformat(timespec="seconds"), "corpo_html": corpo_html,
         }

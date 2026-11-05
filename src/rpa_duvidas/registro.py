@@ -45,7 +45,8 @@ COLUNAS_EVENTO = [
 # v0.3.0 – calibração (seção 8). Lista separada para a migração da v0.2.x continuar
 # reportando só as colunas dela; o banco e a planilha usam COLUNAS_REGISTRO.
 COLUNAS_V030 = [
-    ("escritorio", "Escritório"),
+    ("escritorio", "Escritório"), ("destinatario_original", "Destinatário original"),
+    ("destino_respostas", "Destino das respostas"),
 ]
 COLUNAS_REGISTRO = COLUNAS_EVENTO + COLUNAS_V030
 # Colunas que entraram depois da v0.1.0 chegam a um banco antigo por ALTER TABLE (migrar – lacuna R7)
@@ -156,10 +157,11 @@ def _lista(valor) -> str:
 # Registro
 # --------------------------------------------------------------------------- #
 class Registro:
-    def __init__(self, banco: Path, perfil: str):
+    def __init__(self, banco: Path, perfil: str, destino_respostas: str = ""):
         banco.parent.mkdir(parents=True, exist_ok=True)
         self.banco = banco
         self.perfil = perfil
+        self.destino_respostas = destino_respostas
         self.con = sqlite3.connect(str(banco))
         self.con.row_factory = sqlite3.Row
         self.con.executescript(_SQL)
@@ -219,7 +221,8 @@ class Registro:
             "motivo_manual": (c.motivo_manual or "") if c else "", "acao": r.acao,
             "arquivo_enviado": r.arquivo_enviado, "destinatarios": "; ".join(r.destinatarios),
             "destino": r.destino, "status": r.status, "erro": r.erro, "duracao_ms": str(r.duracao_ms),
-            "escritorio": e.escritorio,
+            "escritorio": e.escritorio, "destinatario_original": r.destinatario_original,
+            "destino_respostas": self.destino_respostas,
         }
         if not c and r.motivo_ignorado:
             linha["motivo"] = r.motivo_ignorado

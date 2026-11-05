@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from ..config import Config, ErroConfiguracao
-from .base import CaixaEmail, ErroCaixa
+from .base import CaixaEmail, ErroCaixa, TravaDestinatarios
 
 __all__ = ["CaixaEmail", "ErroCaixa", "criar_caixa"]
 
@@ -24,8 +24,19 @@ def _data(valor: Any, chave: str) -> Optional[datetime]:
         raise ErroConfiguracao(f"{chave} deve estar no formato AAAA-MM-DD (recebido: {valor!r})") from e
 
 
+def trava_da_config(cfg: Config) -> Optional[TravaDestinatarios]:
+    """Com ``destino_respostas = TESTE``, toda caixa nasce com a trava do destino padrão (seção 6.2)."""
+    destino = cfg.destino_teste
+    if str(cfg.get("execucao.destino_respostas", "")).upper() == "TESTE" and not destino:
+        raise ErroConfiguracao("destino_respostas = TESTE exige execucao.email_destino_padrao")
+    if destino is None:
+        return None
+    return TravaDestinatarios.destino_padrao(destino, cfg.get("destinatarios.avisos_erro", []) or [])
+
+
 def criar_caixa(cfg: Config) -> CaixaEmail:
     tipo = cfg.get("caixa.tipo")
+    trava = trava_da_config(cfg)
     destinos = dict(cfg.exigir("caixa.pastas_destino"))
     criar = bool(cfg.get("caixa.criar_pastas_ausentes", False))
     if tipo == "arquivo":
@@ -37,6 +48,7 @@ def criar_caixa(cfg: Config) -> CaixaEmail:
             pastas_destino=destinos,
             criar=criar,
             mover_apos_tratar=bool(cfg.get("caixa.mover_apos_tratar", True)),
+            trava=trava,
         )
     if tipo == "outlook_com":
         from .outlook_com import CaixaOutlookCOM
@@ -53,6 +65,7 @@ def criar_caixa(cfg: Config) -> CaixaEmail:
             recebidos_desde=_data(cfg.get("caixa.recebidos_desde", ""), "caixa.recebidos_desde"),
             max_varredura=int(cfg.get("caixa.max_varredura", 500) or 500),
             categorias_rpa=[str(v) for v in (cfg.get("caixa.categorias_outlook", {}) or {}).values() if v],
+            trava=trava,
         )
     if tipo == "graph":
         raise ErroConfiguracao(

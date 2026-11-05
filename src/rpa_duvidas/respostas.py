@@ -46,13 +46,18 @@ class GeradorRespostas:
         except TemplateNotFound as e:
             raise ModeloAusente(f"Modelo de resposta não encontrado: {self.pasta / nome}") from e
         dados = {**self.contexto_fixo, "data": f"{datetime.now():%d/%m/%Y %H:%M}", **ctx}
+        faixa = dados.get("faixa_ambiente")
+        if isinstance(faixa, str) and "{destinatario_original}" in faixa:   # perfil calibracao (seção 4.3)
+            dados["faixa_ambiente"] = faixa.replace("{destinatario_original}",
+                                                    str(ctx.get("destinatario_original") or "—"))
         return modelo.render(**dados)
 
     def existe(self, categoria: str) -> bool:
         return any((p / f"{categoria}.html.j2").exists() for p in self.pastas)
 
     # ------------------------------------------------------------------ #
-    def resposta(self, email: EmailRecebido, categoria: str, *, nome_arquivo: str = "", descricao_tutorial: str = "") -> str:
+    def resposta(self, email: EmailRecebido, categoria: str, *, nome_arquivo: str = "", descricao_tutorial: str = "",
+                 destinatario_original: str = "") -> str:
         return self._render(
             f"{categoria}.html.j2",
             assunto=email.assunto,
@@ -60,6 +65,7 @@ class GeradorRespostas:
             nome_arquivo=nome_arquivo,
             descricao_tutorial=descricao_tutorial,
             protocolo=protocolo(email),
+            destinatario_original=destinatario_original,
         )
 
     def nota_manual(self, email: EmailRecebido, c: Optional[Classificacao], rotulo_motivo: str) -> str:

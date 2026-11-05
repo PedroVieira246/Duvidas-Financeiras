@@ -151,3 +151,5 @@ class Resultado:
     erro: str = ""
     duracao_ms: int = 0
     motivo_ignorado: str = ""       # INTERNO / SPAM (E2); vazio nos demais casos
+    # v0.3.0 – calibração
+    destinatario_original: str = ""     # quem receberia no envio real (destino_respostas = TESTE)

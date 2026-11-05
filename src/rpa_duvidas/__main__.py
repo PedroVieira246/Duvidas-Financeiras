@@ -34,7 +34,8 @@ log = logging.getLogger("rpa_duvidas")
 
 def montar_dependencias(cfg: Config, caixa=None):
     """Cria todas as peças a partir da configuração (injeção simples)."""
-    registro = Registro(cfg.caminho("registro.banco_estado"), cfg.perfil)
+    registro = Registro(cfg.caminho("registro.banco_estado"), cfg.perfil,
+                        str(cfg.get("execucao.destino_respostas", "") or ""))
     tutoriais = RepositorioTutoriais(
         cfg.yaml_referenciado("tutoriais.arquivo"), lambda v: cfg.caminho(v, eh_valor=True)
     )

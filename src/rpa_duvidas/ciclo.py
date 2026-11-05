@@ -44,8 +44,7 @@ from .tutoriais import RepositorioTutoriais
 log = logging.getLogger(__name__)
 
 
-class ErroSeguranca(Exception):
-    """Destinatário fora da lista permitida no ambiente atual."""
+from .caixa.base import ErroSeguranca  # noqa: E402  (mantém rpa_duvidas.ciclo.ErroSeguranca)
 
 
 @dataclass
@@ -99,6 +98,7 @@ class Robo:
         self.fornecedores = fornecedores
         self.envio_real = cfg.envio_real
         self.modo = "REAL" if self.envio_real else "SIMULACAO"
+        self.destino_teste = cfg.destino_teste      # v0.3.0 – D02: todas as mensagens vão para o destino padrão
         self.permitidos = list(cfg.get("seguranca.destinatarios_permitidos", []) or [])
         self.cats = cfg.get("caixa.categorias_outlook", {}) or {}
         self.mover = bool(cfg.get("caixa.mover_apos_tratar", True))
@@ -363,14 +363,32 @@ class Robo:
         self.caixa.finalizar(email, destino, categoria)
         r.status = Status.CONCLUIDO if self.envio_real else Status.SIMULADO
 
-    def _responder(self, email: EmailRecebido, corpo: str, anexos, r: Resultado) -> None:
+    def _destinatarios_resposta(self, email: EmailRecebido, r: Resultado) -> List[str]:
+        """Preenche ``r.destinatarios`` / ``r.destinatario_original`` e devolve o CC a usar."""
         responder_todos = bool(self.cfg.get("respostas.responder_todos", False))
         cc = list(self.cfg.get("destinatarios.analistas_cc", []) or [])
-        r.destinatarios = list(dict.fromkeys(self.caixa.destinatarios_resposta(email, responder_todos) + cc))
+        originais = list(dict.fromkeys(self.caixa.destinatarios_resposta(email, responder_todos)))
+        if self.destino_teste:
+            r.destinatario_original = "; ".join(originais)
+            r.destinatarios = [self.destino_teste]
+            return []                                   # seção 6.2: CC ignorado no envio de teste
+        r.destinatarios = list(dict.fromkeys(originais + cc))
+        return cc
+
+    def _responder(self, email: EmailRecebido, corpo: str, anexos, r: Resultado, cc: Optional[List[str]] = None,
+                   prefixo_assunto: str = "") -> None:
+        responder_todos = bool(self.cfg.get("respostas.responder_todos", False))
+        if cc is None:
+            cc = self._destinatarios_resposta(email, r)
         self._verificar_destinatarios(r.destinatarios)
         self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
+        extra = {}
+        if self.destino_teste:
+            extra["redirecionar_para"] = self.destino_teste
+        if prefixo_assunto:
+            extra["prefixo_assunto"] = prefixo_assunto
         r.id_mensagem_gerada = self.caixa.responder(
-            email, corpo, anexos=anexos, cc=cc, responder_todos=responder_todos, enviar=self.envio_real
+            email, corpo, anexos=anexos, cc=cc, responder_todos=responder_todos, enviar=self.envio_real, **extra
         )
         self.registro.marcar_acao_executada(email.chave)
         self._finalizar_ok(email, Destino.RESPONDIDOS, "respondido", r)
@@ -379,16 +397,19 @@ class Robo:
         r.acao = Acao.RESPONDER_TUTORIAL
         tutorial = self.tutoriais.localizar(c.categoria)          # RF06: falha → Erro
         r.arquivo_enviado = tutorial.nome
+        cc = self._destinatarios_resposta(email, r)
         corpo = self.respostas.resposta(
-            email, c.categoria, nome_arquivo=tutorial.nome, descricao_tutorial=tutorial.descricao
+            email, c.categoria, nome_arquivo=tutorial.nome, descricao_tutorial=tutorial.descricao,
+            destinatario_original=r.destinatario_original,
         )
-        self._responder(email, corpo, [tutorial.caminho], r)
+        self._responder(email, corpo, [tutorial.caminho], r, cc)
 
     def _responder_forms(self, email: EmailRecebido, r: Resultado) -> None:
         r.acao = Acao.RESPONDER_FORMS
         r.arquivo_enviado = "(link do Forms)"
-        corpo = self.respostas.resposta(email, Categoria.FORMS_PO)
-        self._responder(email, corpo, [], r)
+        cc = self._destinatarios_resposta(email, r)
+        corpo = self.respostas.resposta(email, Categoria.FORMS_PO, destinatario_original=r.destinatario_original)
+        self._responder(email, corpo, [], r, cc)
 
     def _encaminhar_manual(self, email: EmailRecebido, c: Classificacao, r: Resultado) -> None:
         r.acao = Acao.ENCAMINHAR_MANUAL
@@ -396,6 +417,9 @@ class Robo:
         rotulo = (self.cfg.get("respostas.rotulos_motivo_manual", {}) or {}).get(motivo, motivo)
         prefixo = str(self.cfg.get("respostas.prefixo_manual", "[MANUAL – {motivo}]")).format(motivo=rotulo)
         para = self.cfg.destino_manual(motivo)
+        if self.destino_teste:                          # seção 6.2: encaminhamento também só ao destino padrão
+            r.destinatario_original = "; ".join(para)
+            para = [self.destino_teste]
         if not para:
             raise RuntimeError("Nenhum destinatário de análise manual configurado")
         r.destinatarios = para
