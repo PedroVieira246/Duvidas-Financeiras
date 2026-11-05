@@ -1,5 +1,14 @@
 # Histórico de versões
 
+## 0.3.0 – em desenvolvimento
+
+Executável configurável por planilha, para a calibração na máquina do analista (`Especificacao_Tecnica_v0.3.0_EXE_Calibracao.md`). Base: v0.2.1.
+
+**Alterado**
+
+- Versão interna 0.3.0 (`__init__.py`, `pyproject.toml`).
+- `.gitignore`: `dados/` passou a valer só na raiz (`/dados/`), para não esconder a massa de teste `tests/dados/massa_emails_sintetica.csv`, que agora é versionada. Novos itens: `dist/`, `build/`, `/arquivo/`, `logs/*.txt` e `/config/configuracao.xlsx`.
+
 ## 0.2.1 – 27/10/2026
 
 Ajustes do primeiro teste real na máquina do Pedro (Outlook LTSC 2021, conta Microsoft 365 configurada como **Exchange ActiveSync**). Detalhes em `docs/11_ajustes_v0.2.1.md`. Sem as chaves novas, o comportamento é o da v0.2.0.

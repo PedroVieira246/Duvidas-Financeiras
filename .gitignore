@@ -2,8 +2,13 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+dist/
+build/
 logs/*.log
-dados/
+logs/*.txt
+/dados/
+/arquivo/
+/config/configuracao.xlsx
 relatorios/
 dados_teste/caixa_simulada/
 *.lock

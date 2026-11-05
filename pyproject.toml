@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rpa-duvidas-financeiras"
-version = "0.2.1"
+version = "0.3.0"
 description = "RPA Dúvidas Financeiras – Frente 1: triagem e resposta automática de e-mails de fornecedores"
 requires-python = ">=3.10"
 dependencies = [

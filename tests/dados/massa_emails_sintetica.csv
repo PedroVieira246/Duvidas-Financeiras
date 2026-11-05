@@ -1,0 +1,41 @@
+id,assunto,corpo,categoria_esperada
+S01,Acesso ao Connect,"Bom dia, não consigo acessar o portal Connect, aparece usuário ou senha inválidos. Podem ajudar?",TUT_CONNECT
+S02,Senha,"Olá, esqueci minha senha do portal e não consigo entrar. Como faço para redefinir?",TUT_CONNECT
+S03,primeiro acesso,"Recebemos o convite mas não sabemos como fazer o primeiro acesso ao Connect.",TUT_CONNECT
+S04,RE: usuário bloqueado,"Prezados, nosso usuário está bloqueado no Connect desde ontem. Obrigado",TUT_CONNECT
+S05,Dúvida portal,"Boa tarde! Qual o link de acesso do portal de fornecedores? Tentei o login e não funcionou",TUT_CONNECT
+S06,Como enviar a nota fiscal,"Bom dia, como envio a NF pelo portal? É a primeira vez que vamos faturar para vocês.",TUT_UPLOAD_NF
+S07,Upload de NF,"Não estou conseguindo fazer o upload da nota fiscal no PYM, dá erro no XML.",TUT_UPLOAD_NF
+S08,NF-e,"Onde eu anexo a nota? Preciso subir a NF referente ao serviço de setembro.",TUT_UPLOAD_NF
+S09,ENC: nota,"Segue a DANFE. Gostaria de saber como enviar a nota pelo sistema de vocês, pois nos pediram para não mandar por e-mail.",TUT_UPLOAD_NF
+S10,Consulta de NF no PYM,"Como faço para consultar minhas notas no PYM depois do upload?",TUT_UPLOAD_NF
+S11,Reembolso,"Olá, precisamos solicitar o reembolso de despesas de viagem do técnico. Qual o procedimento?",TUT_REEMBOLSO
+S12,Ressarcimento de despesas,"Bom dia, como faço para pedir o ressarcimento das despesas de frete?",TUT_REEMBOLSO
+S13,chamado,"Como abro o chamado de reembolso? Não encontrei a opção.",TUT_REEMBOLSO
+S14,Reembolsar valor,"Pagamos uma taxa indevida e gostaríamos de reembolsar o valor, como proceder?",TUT_REEMBOLSO
+S15,Atualização cadastral,"Prezados, mudamos de endereço e precisamos atualizar o cadastro da empresa.",TUT_CADASTRO
+S16,Dados bancários,"Bom dia, trocamos de banco. Como alterar a conta bancária para os próximos pagamentos?",TUT_CADASTRO
+S17,Alteração de razão social,"Nossa razão social mudou após a fusão, como atualizamos os dados cadastrais?",TUT_CADASTRO
+S18,Cadastro,"Olá, preciso atualizar meus dados de contato no cadastro de fornecedor.",TUT_CADASTRO
+S19,Pedido de compra,"Bom dia, ainda não recebemos o pedido de compra referente à proposta aprovada. Podem enviar?",FORMS_PO
+S20,PO,"Precisamos da PO para poder faturar o serviço, como solicitar?",FORMS_PO
+S21,Ordem de compra,"Prezados, como faço a solicitação de pedido para o serviço do mês que vem?",FORMS_PO
+S22,Sem pedido,"Prestamos o serviço mas estamos sem pedido. Preciso do pedido para emitir a nota.",FORMS_PO
+S23,Número do pedido,"Qual o número do pedido de compra que devo informar na nota?",FORMS_PO
+S24,Pagamento,"Bom dia, quando vou receber o pagamento da NF 12345? Já venceu semana passada.",MANUAL
+S25,Pagamento em atraso,"O pagamento está atrasado há 20 dias, por favor verificar.",MANUAL
+S26,Status da nota,"Gostaria de saber o status da NF 9876 enviada dia 10.",MANUAL
+S27,Saldo,"Qual o saldo do pedido 4500012345? Preciso saber se ainda posso faturar.",MANUAL
+S28,Previsão,"Qual a previsão de pagamento das notas de setembro?",MANUAL
+S29,Comprovante,"Podem me enviar o comprovante de pagamento da fatura 555?",MANUAL
+S30,Quero ser fornecedor,"Olá, gostaríamos de nos cadastrar como fornecedor da empresa. Qual o processo de homologação?",MANUAL
+S31,Novo cadastro,"Como faço um novo cadastro de fornecedor? Somos uma empresa nova.",MANUAL
+S32,Reunião,"Bom dia, podemos marcar uma reunião para apresentar nossos novos serviços?",MANUAL
+S33,Proposta comercial,"Segue proposta comercial atualizada para avaliação.",MANUAL
+S34,Dúvida,"Olá, tudo bem? Tenho uma dúvida, podem me ligar?",MANUAL
+S35,Retenção de impostos,"Por que houve retenção de ISS na última fatura? O valor veio diferente.",MANUAL
+S36,acesso + nota,"Não consigo acessar o Connect para fazer o upload da nota fiscal, a senha não funciona.",MANUAL
+S37,urgente!!!,"preciso subir a nf hj no portal mas nao sei onde fica o upload, me ajudem",TUT_UPLOAD_NF
+S38,Re: Re: acesso,"bom dia, continuo sem conseguir entrar no connect, já tentei redefinir senha",TUT_CONNECT
+S39,Boleto,"O boleto venceu, vocês vão pagar com juros?",MANUAL
+S40,Atualizar dados,"Bom dia, preciso atualizar os dados bancários e o endereço de cobrança.",TUT_CADASTRO
