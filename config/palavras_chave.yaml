@@ -1,0 +1,156 @@
+# =============================================================================
+# Termos e pesos do classificador BASE por palavras-chave (F06 – RF04)
+#
+# VERSÃO INICIAL, escrita SEM e-mails reais. Deve ser revisada assim que a
+# Anelise enviar a massa de exemplos (solicitação S01): rode
+#   python scripts/avaliar_classificador.py --massa tests/dados/massa_emails.csv
+# e ajuste os termos/pesos até atingir a meta de acerto.
+#
+# Como funciona:
+#   * texto comparado sem acento e em minúsculas; o termo casa como palavra
+#     ou expressão inteira;
+#   * cada termo encontrado soma o seu peso (uma vez, mesmo que repita);
+#     termos no ASSUNTO valem peso × peso_assunto;
+#   * confiança = dominância × força
+#       dominância = pontos da 1ª categoria / (pontos da 1ª + pontos da 2ª)
+#       força      = min(1, pontos da 1ª / saturacao)
+#   * abaixo de classificacao.limite_confianca (settings.yaml) → MANUAL.
+#
+# Categorias especiais (nunca respondidas, sempre encaminhadas):
+#   MANUAL_SAP          → depende de consulta no SAP (fora do MVP)
+#   MANUAL_FORA_ESCOPO  → assunto conhecido, mas fora do MVP (ex.: novo cadastro)
+# =============================================================================
+
+peso_assunto: 2.0
+saturacao: 5.0
+
+categorias:
+  TUT_CONNECT:
+    termos:
+      connect: 3
+      portal connect: 4
+      acesso ao portal: 3
+      acessar o portal: 3
+      primeiro acesso: 3
+      nao consigo acessar: 2
+      nao consigo entrar: 2
+      senha: 2
+      redefinir senha: 3
+      esqueci a senha: 3
+      esqueci minha senha: 3
+      login: 2
+      usuario bloqueado: 3
+      acesso bloqueado: 3
+      link de acesso: 2
+      acesso: 1
+
+  TUT_UPLOAD_NF:
+    termos:
+      upload: 3
+      subir a nota: 3
+      subir a nf: 3
+      subir nf: 3
+      anexar a nota: 3
+      anexar a nf: 3
+      lancar a nota: 2
+      enviar a nota: 2
+      enviar a nf: 2
+      envio da nota: 2
+      envio da nf: 2
+      como envio a nf: 3
+      como enviar a nota: 3
+      consulta de nf: 2
+      consultar minhas notas: 2
+      xml: 2
+      pym: 2
+      nota fiscal: 1
+      nf: 1
+      nfe: 1
+      nf-e: 1
+      danfe: 1
+
+  TUT_REEMBOLSO:
+    termos:
+      reembolso: 4
+      reembolsar: 4
+      chamado de reembolso: 5
+      ressarcimento: 3
+      ressarcir: 3
+      devolucao de valor: 2
+      despesa: 1
+
+  TUT_CADASTRO:
+    termos:
+      atualizar cadastro: 4
+      atualizar o cadastro: 4
+      atualizar meu cadastro: 4
+      atualizacao cadastral: 4
+      atualizacao de cadastro: 4
+      dados cadastrais: 4
+      atualizar dados: 3
+      atualizar os dados: 3
+      dados bancarios: 3
+      conta bancaria: 3
+      alterar banco: 3
+      alterar conta: 3
+      mudanca de endereco: 3
+      alterar endereco: 3
+      novo endereco: 2
+      razao social: 2
+      cadastro: 2
+
+  FORMS_PO:
+    termos:
+      pedido de compra: 4
+      ordem de compra: 4
+      purchase order: 4
+      solicitar pedido: 4
+      solicitacao de pedido: 4
+      solicitar o pedido: 4
+      emitir pedido: 3
+      emissao do pedido: 3
+      envio do pedido: 3
+      enviar o pedido: 3
+      numero do pedido: 3
+      sem pedido: 3
+      nao tenho o pedido: 3
+      preciso do pedido: 3
+      po: 2
+      pedido: 1
+
+  MANUAL_SAP:
+    termos:
+      data de pagamento: 4
+      data do pagamento: 4
+      previsao de pagamento: 4
+      quando vou receber: 4
+      quando sera pago: 4
+      quando serei pago: 4
+      quando sera feito o pagamento: 4
+      nao recebi o pagamento: 4
+      nao recebi pagamento: 4
+      nao foi pago: 4
+      pagamento em atraso: 4
+      pagamento atrasado: 4
+      status da nota: 4
+      status da nf: 4
+      situacao da nota: 4
+      situacao da nf: 4
+      saldo do pedido: 5
+      saldo da po: 5
+      prazo de pagamento: 3
+      comprovante de pagamento: 3
+      vencimento: 2
+      atrasado: 2
+      atraso: 2
+      boleto: 2
+      pagamento: 1
+
+  MANUAL_FORA_ESCOPO:
+    termos:
+      novo cadastro: 4
+      quero me cadastrar: 4
+      cadastrar como fornecedor: 4
+      ser fornecedor: 3
+      tornar fornecedor: 3
+      homologacao: 3

@@ -1,0 +1,11 @@
+# =============================================================================
+# Lista OFICIAL de fornecedores atendidos pelo robô (RF03).
+# Aguardando a lista enviada pela Anelise (solicitação S06).
+#
+# Remetente que não bate com nenhum e-mail nem domínio abaixo é encaminhado
+# para análise manual com o motivo [MANUAL – FORA DA LISTA].
+# Comparação sem diferenciar maiúsculas/minúsculas.
+# =============================================================================
+
+emails: []        # ex.: - "financeiro@fornecedor.com.br"
+dominios: []      # ex.: - "fornecedor.com.br"

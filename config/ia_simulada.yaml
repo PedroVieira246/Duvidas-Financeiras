@@ -1,0 +1,96 @@
+# =============================================================================
+# Provedor de IA SIMULADO (classificacao.ia.provedor.tipo: simulado)
+#
+# NÃO é IA: é uma tabela de regras para testar e demonstrar o fluxo E3–E8 sem
+# rede, sem custo e sem dados reais (PA08 – provedor corporativo pendente).
+#
+# A 1ª regra cujo termo aparece no ASSUNTO ou no CORPO do e-mail (comparação
+# sem acento, minúsculas) define a resposta. Sem regra → "padrao".
+#   contem        basta um dos termos
+#   contem_todos  todos os termos
+#   resposta      o JSON que a "IA" devolve (contrato da seção 5)
+#   falha         timeout | erro | json_invalido | json_invalido_uma_vez
+#                 (simula falhas da IA – úteis na demonstração)
+# Os resumos abaixo são textos genéricos e fictícios.
+# =============================================================================
+
+modelo: "simulado-regras-v1"
+texto_invalido: "Claro! A dúvida parece ser sobre nota fiscal."
+
+regras:
+  # ---- falhas simuladas (para demonstrar D1) ---------------------------------
+  - nome: simular_timeout
+    contem: ["[[simular_timeout]]"]
+    falha: timeout
+  - nome: simular_json_invalido
+    contem: ["[[simular_json_invalido]]"]
+    falha: json_invalido
+  - nome: simular_json_corrigido
+    contem: ["[[simular_json_corrigido]]"]
+    falha: json_invalido_uma_vez
+    resposta: {categoria: C03, categorias_secundarias: [], tutorial: TUT_UPLOAD_NF, confianca: 0.90,
+               acao: RESPONDER_TUTORIAL, sinais_excecao: [], resumo_duvida: null,
+               justificativa: "Pergunta como inserir a NF no portal (resposta corrigida)."}
+
+  # ---- C03 – Envio / upload de NF ------------------------------------------
+  - nome: c03_erro_sistema
+    contem: ["tela de login", "erro", "nao consigo seguir", "nao deixa avancar"]
+    contem_todos: ["nf"]
+    resposta: {categoria: C03, categorias_secundarias: [], tutorial: null, confianca: 0.88,
+               acao: ENCAMINHAR_MANUAL, sinais_excecao: [ERRO_SISTEMA],
+               resumo_duvida: "O fornecedor não consegue concluir o upload da NF por erro no sistema e pede ajuda.",
+               justificativa: "Upload bloqueado por erro de sistema."}
+  - nome: c03_pedido_po
+    contem: ["numero do pedido", "pedido de compra", "pedido", "po"]
+    contem_todos: ["nf"]
+    resposta: {categoria: C03, categorias_secundarias: [], tutorial: null, confianca: 0.86,
+               acao: ENCAMINHAR_MANUAL, sinais_excecao: [PEDIDO_PO],
+               resumo_duvida: "O fornecedor pergunta como emitir e fazer o upload da NF e informa que ainda não recebeu o número do pedido (PO).",
+               justificativa: "Dúvida de upload que depende do número do pedido."}
+  - nome: c03_como_inserir
+    contem: ["inserir", "inseri-la", "inserimos", "upload", "subir", "lancar", "enviar a nf", "enviar a nota"]
+    resposta: {categoria: C03, categorias_secundarias: [], tutorial: TUT_UPLOAD_NF, confianca: 0.93,
+               acao: RESPONDER_TUTORIAL, sinais_excecao: [], resumo_duvida: null,
+               justificativa: "Pergunta como inserir a NF no portal, sem erro relatado nem outra dúvida."}
+
+  # ---- C05 – Cadastro --------------------------------------------------------
+  - nome: c05_dependencia_interna
+    contem_todos: ["cadastro", "parado"]
+    resposta: {categoria: C05, categorias_secundarias: [C06], tutorial: null, confianca: 0.84,
+               acao: ENCAMINHAR_MANUAL, sinais_excecao: [DEPENDENCIA_CADASTRAL_INTERNA],
+               resumo_duvida: "O fornecedor informa que a atualização cadastral está pendente e bloqueia um pagamento ou reembolso; pede o contato do responsável interno.",
+               justificativa: "Cadastro com dependência interna."}
+  - nome: c05_atualizacao
+    contem: ["alteracao societaria", "atualizar o cadastro", "atualizacao cadastral", "atualizacao de cadastro",
+             "dados bancarios", "desbloqueio do cadastro"]
+    resposta: {categoria: C05, categorias_secundarias: [], tutorial: TUT_CADASTRO, confianca: 0.94,
+               acao: RESPONDER_TUTORIAL, sinais_excecao: [], resumo_duvida: null,
+               justificativa: "Pedido explícito de atualização cadastral."}
+
+  # ---- C06 – Reembolso -------------------------------------------------------
+  - nome: c06_documentacao
+    contem_todos: ["reembolso"]
+    contem: ["nota de debito"]
+    resposta: {categoria: C06, categorias_secundarias: [], tutorial: null, confianca: 0.85,
+               acao: ENCAMINHAR_MANUAL, sinais_excecao: [DOCUMENTACAO_REEMBOLSO],
+               resumo_duvida: "O fornecedor pergunta se deve emitir Nota de Débito ou NF para o reembolso.",
+               justificativa: "Reembolso com dúvida de documentação."}
+  - nome: c06_como_solicitar
+    contem: ["reembolso"]
+    resposta: {categoria: C06, categorias_secundarias: [], tutorial: TUT_REEMBOLSO, confianca: 0.92,
+               acao: RESPONDER_TUTORIAL, sinais_excecao: [], resumo_duvida: null,
+               justificativa: "Pergunta de procedimento para solicitar reembolso, sem exceção."}
+
+  # ---- C07 – Formulários -----------------------------------------------------
+  - nome: c07_formularios
+    contem: ["previas de honorarios", "previa de honorarios", "formulario"]
+    resposta: {categoria: C07, categorias_secundarias: [], tutorial: null, confianca: 0.86,
+               acao: ENCAMINHAR_MANUAL, sinais_excecao: [],
+               resumo_duvida: "O fornecedor enviou prévias de honorários e pede orientação sobre o formulário.",
+               justificativa: "Formulário/prévias de honorários; categoria sem resposta padrão."}
+
+# ---- C99 – qualquer outro assunto ------------------------------------------
+padrao: {categoria: C99, categorias_secundarias: [], tutorial: null, confianca: 0.80,
+         acao: ENCAMINHAR_MANUAL, sinais_excecao: [],
+         resumo_duvida: "O fornecedor envia uma mensagem que não se encaixa nas categorias mapeadas.",
+         justificativa: "Assunto fora das categorias mapeadas."}

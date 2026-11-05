@@ -1,0 +1,29 @@
+{#- Nota interna que vai no topo do e-mail encaminhado aos analistas (RF08 / E7).
+    v0.2.0: resumo da IA, categoria do .docx, dúvidas secundárias e sinais de
+    exceção (RN7.2). O resumo é SÓ interno e nunca vai ao fornecedor (RN7.3).
+    Variáveis sempre presentes (StrictUndefined): rotulo_motivo, categoria,
+    confianca, justificativa, remetente, tem_anexos, nomes_anexos, protocolo,
+    data, faixa_ambiente, resumo_duvida, categoria_docx, duvidas_secundarias,
+    sinais_excecao. -#}
+<div style="font-family:Segoe UI,Arial,sans-serif;font-size:10pt;border-left:4px solid #2563eb;padding:8px 12px;background:#eff6ff;color:#1e293b">
+{%- if faixa_ambiente %}<p style="margin:0 0 6px;color:#92400e;font-weight:600">{{ faixa_ambiente }}</p>{% endif %}
+<p style="margin:0"><b>Encaminhado pelo RPA Dúvidas Financeiras para análise manual</b></p>
+<p style="margin:4px 0 0">Motivo: <b>{{ rotulo_motivo }}</b><br>
+{%- if resumo_duvida %}
+Resumo da dúvida (gerado por IA, uso interno – confira no e-mail original): <i>{{ resumo_duvida }}</i><br>
+{%- endif %}
+{%- if categoria_docx %}
+Categoria (taxonomia do .docx): {{ categoria_docx }}<br>
+{%- endif %}
+{%- if duvidas_secundarias %}
+Dúvidas secundárias: {{ duvidas_secundarias }}<br>
+{%- endif %}
+{%- if sinais_excecao %}
+Sinais de exceção: {{ sinais_excecao }}<br>
+{%- endif %}
+Sugestão do classificador: {% if confianca > 0 %}{{ categoria }} (confiança {{ "%.0f"|format(confianca * 100) }}%){% else %}—{% endif %}<br>
+Justificativa: {{ justificativa }}<br>
+Remetente: {{ remetente }}{% if tem_anexos %} · com anexos: {{ nomes_anexos }}{% endif %}<br>
+Protocolo: {{ protocolo }} · {{ data }}</p>
+</div>
+<br>

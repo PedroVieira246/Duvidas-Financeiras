@@ -1,0 +1,25 @@
+# Tutoriais FICTÍCIOS para demonstração e testes (gerados por
+# scripts/preparar_demo.py). Mesma estrutura de config/tutoriais.yaml.
+
+raiz: "dados_teste/tutoriais"
+limite_anexo_mb: 20
+
+categorias:
+  TUT_CONNECT:
+    pasta: "04. Suporte Connect"
+    padrao: "*.pptx"
+    descricao: "Acesso ao Connect"
+  TUT_UPLOAD_NF:
+    pasta: "Upload de NF"
+    # v0.2.1: a área envia este tutorial em PDF (histórico de e-mails, Doc1).
+    # Confirmar o arquivo oficial com a Anelise (S05 / P3 do Doc2).
+    padrao: "*Upload e consulta de NFs*.pdf"
+    descricao: "Upload e consulta de NF no PYM (Connect)"
+  TUT_REEMBOLSO:
+    pasta: "Reembolso"
+    padrao: "*Reembolso*.pptx"
+    descricao: "Como abrir um chamado de Reembolso"
+  TUT_CADASTRO:
+    pasta: "03. Tutorial de acessos"
+    padrao: "*.pptx"
+    descricao: "Atualização de cadastro"

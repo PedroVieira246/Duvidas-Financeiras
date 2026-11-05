@@ -1,0 +1,7 @@
+# Lista de "fornecedores" no ambiente DEV: você e os colegas que enviam
+# e-mails de teste para a pasta RPA_Teste. Qualquer outro remetente cai em
+# [MANUAL – FORA DA LISTA], o que também serve para testar esse caminho.
+
+emails:
+  - "pedro.vieira.t@gateware.com.br"
+dominios: []

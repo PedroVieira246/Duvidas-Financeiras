@@ -1,0 +1,257 @@
+# =============================================================================
+# RPA Dúvidas Financeiras – Frente 1 (triagem e resposta de e-mails)
+# Configuração BASE, comum a todos os ambientes.
+#
+# Cada perfil em config/perfis/<perfil>.yaml sobrescreve só o que muda.
+# Perfil escolhido por: --perfil <nome>  ou  variável de ambiente RPA_PERFIL.
+#
+# Caminhos relativos são resolvidos a partir da raiz do projeto.
+# Variáveis de ambiente são expandidas: ${USERPROFILE}, %USERPROFILE%, ~
+#
+# REGRA DO PROJETO: nenhum endereço, pasta, credencial ou texto de negócio
+# fica no código. Tudo o que muda entre ambientes ou que a área pode alterar
+# está aqui ou nos arquivos referenciados abaixo.
+# =============================================================================
+
+ambiente: base            # sobrescrito pelo perfil (dev | demo | prod)
+
+caixa:
+  # outlook_com = Outlook clássico da máquina via pywin32 (MVP)
+  # arquivo     = caixa simulada em disco (demonstração e testes, sem Outlook)
+  # graph       = Microsoft Graph (produção, ainda não implementado – F18)
+  tipo: outlook_com
+
+  # Conta/caixa no perfil do Outlook (nome exibido no painel de pastas ou
+  # endereço SMTP). Vazio = conta padrão do perfil do Outlook.
+  conta: ""
+
+  # Pasta lida pelo robô. "@inbox" = Caixa de Entrada da conta, em qualquer
+  # idioma do Outlook. Subpastas separadas por "/".
+  pasta_entrada: "@inbox"
+
+  # Pastas de destino após o tratamento (RF09). Relativas à raiz da conta;
+  # "@inbox/..." cria como subpasta da Caixa de Entrada.
+  pastas_destino:
+    respondidos: "@inbox/Respondidos"
+    encaminhados: "@inbox/Encaminhados"
+    erro: "@inbox/Erro"
+    ignorados: "@inbox/Ignorados"
+  criar_pastas_ausentes: false
+
+  # Categorias do Outlook aplicadas ao e-mail original (RF09).
+  categorias_outlook:
+    respondido: "RPA - Respondido"
+    encaminhado: "RPA - Encaminhado"
+    erro: "RPA - Erro"
+    ignorado: "RPA - Ignorado"
+    simulado: "RPA - Simulado"
+
+  # true  = considera todos os e-mails da pasta de entrada como pendentes
+  # false = considera só os não lidos
+  ler_todos_da_pasta: true
+  lote_maximo: 50                 # e-mails por ciclo
+
+  # Enviar em nome da caixa da automação (caixa compartilhada). Vazio = conta
+  # que está respondendo.
+  enviar_em_nome_de: ""
+
+  # v0.2.1 – Mover o e-mail para pastas_destino depois de tratar (RF09).
+  # false = "modo sem mover": o e-mail fica na pasta de entrada, marcado como
+  # lido e com a categoria "RPA - …", e os ciclos seguintes pulam e-mails que
+  # já têm categoria do RPA. Necessário quando a conta está no Outlook como
+  # Exchange ActiveSync (o Outlook recusa o Move via COM). O "verificar" avisa.
+  mover_apos_tratar: true
+
+  # v0.2.1 – Filtros de leitura (opcionais). Vazio = sem filtro.
+  # filtro_assunto: só lê e-mails cujo assunto CONTÉM o texto (sem diferenciar
+  #   maiúsculas). Ex.: "[RPA-TESTE]" para testar na Caixa de Entrada pessoal.
+  # recebidos_desde: AAAA-MM-DD – ignora e-mails recebidos antes da data.
+  # max_varredura: quantos e-mails mais recentes examinar por ciclo quando
+  #   algum filtro ou o modo sem mover estiver ligado.
+  filtro_assunto: ""
+  recebidos_desde: ""
+  max_varredura: 500
+
+  # Só para tipo "arquivo"
+  arquivo:
+    raiz: "dados_teste/caixa_simulada"
+
+execucao:
+  # Chave geral de segurança (RNF08). false = só rascunhos (RF11).
+  envio_real: false
+  # Usado pelo modo --loop e documentado para o Agendador de Tarefas.
+  intervalo_minutos: 15
+
+seguranca:
+  # Fora do ambiente prod, o robô só envia/gera mensagens para estes
+  # domínios/endereços. Qualquer outro destinatário bloqueia a ação e o
+  # e-mail vai para Erro. Lista vazia = sem trava (somente prod).
+  destinatarios_permitidos: []
+
+destinatarios:
+  analistas_cc: []                # em cópia nas respostas (RF05)
+  analise_manual:                 # destino do encaminhamento (RF08)
+    padrao: []
+    por_motivo: {}                # ex.: { SAP: [...], NAO_IDENTIFICADO: [...] }
+  avisos_erro: []                 # aviso de falha (RNF02)
+
+filtros:
+  validar_fornecedor: true
+  arquivo_fornecedores: "config/fornecedores.yaml"
+  # Assuntos que indicam resposta automática (comparação sem acento, minúsculas)
+  assuntos_resposta_automatica:
+    - "resposta automatica"
+    - "automatic reply"
+    - "autoreply"
+    - "auto reply"
+    - "ausencia"
+    - "fora do escritorio"
+    - "out of office"
+    - "nao foi entregue"
+    - "nao entregue"
+    - "undeliverable"
+    - "delivery status notification"
+    - "mail delivery failed"
+    - "falha na entrega"
+  # E-mail interno (E2 – RN2.2): remetente destes domínios vai para Ignorados
+  # com motivo INTERNO, sem chamar a IA. A própria caixa da automação
+  # (caixa.conta / caixa.enviar_em_nome_de) também conta como interna.
+  # Vazio = filtro desligado (comportamento da v0.1.0). Destino final em aberto (PA09).
+  dominios_internos: []           # ex.: ["empresa.com.br"]
+  # Mensagens geradas pelo PRÓPRIO RPA (v0.2.1): respostas, encaminhamentos e
+  # avisos que voltam para a caixa lida vão para Ignorados (motivo
+  # PROPRIO_RPA), para o robô não responder a si mesmo. Regex sobre o texto
+  # normalizado (minúsculas, sem acento). "textos" vale só para a ÚLTIMA
+  # mensagem (antes do histórico citado): a resposta de um fornecedor que
+  # cita o e-mail do robô continua sendo tratada normalmente.
+  # Se mudar o rodapé de _base.html.j2 ou os prefixos de assunto, ajuste aqui.
+  mensagens_do_rpa:
+    ativo: true
+    assuntos:
+      - '^\[manual\s*[–-]'                 # encaminhamento para análise manual
+      - '^\[rpa duvidas financeiras\]'      # avisos de erro / IA indisponível
+    textos:
+      - 'resposta automatica\s*.{0,3}\s*protocolo [0-9a-f]{8}'   # rodapé das respostas
+      - 'o rpa duvidas financeiras nao conseguiu tratar um e-mail'
+  # Spam (E2 – RN2.3, opcional – PA10): o Exchange já filtra a Caixa de Entrada.
+  # Ligado, o e-mail com SCL >= limite vai para Ignorados com motivo SPAM.
+  spam:
+    ativo: false
+    cabecalho: "x-ms-exchange-organization-scl"
+    limite_scl: 5
+
+classificacao:
+  # palavras_chave (padrão – igual à v0.1.0) | ia (F08 – v0.2.0) | menu (F09)
+  # Voltar de "ia" para "palavras_chave" restaura o classificador antigo sem
+  # mexer no código (RNF-IA08).
+  tipo: palavras_chave
+  limite_confianca: 0.70          # abaixo disso a categoria vira MANUAL (RF04). Conservador: erro grave pesa mais
+  arquivo_termos: "config/palavras_chave.yaml"
+
+  # ---------------------------------------------------------------------------
+  # Classificação por IA generativa (F08) – usada só com tipo: ia.
+  # Especificação funcional de 22/10/2026, seções 3 (E3–E5), 5, 6 e 7.
+  # ---------------------------------------------------------------------------
+  ia:
+    # Com tipo: ia este limite SUBSTITUI o limite_confianca acima (regra D3, seção 6.2).
+    # Calibrar com scripts/avaliar_classificador.py --classificador ia --limites ...
+    limite_confianca: 0.80
+    arquivo_categorias: "config/categorias_ia.yaml"
+    # Prompt versionado (Anexo A). Mudou o texto? Crie classificacao_v2.txt – nunca sobrescreva (RNF-IA02)
+    arquivo_prompt: "config/prompts/classificacao_v1.txt"
+    timeout_segundos: 30            # por chamada (RN3 – tratamento de erro)
+    novas_tentativas: 2             # depois da 1ª chamada que falhar
+    esperas_segundos: [2, 4]        # espera antes de cada nova tentativa
+    correcoes_formato: 1            # nova chamada quando o JSON vem inválido (máximo 1 – E4)
+    max_falhas_seguidas: 5          # depois disso: aviso aos analistas e IA desligada no ciclo (RNF-IA03)
+    limite_corpo: 6000              # caracteres enviados à IA (RN3.2)
+    limite_historico: 2000
+    texto_vazio: "(nenhum)"         # usado quando não há anexos/histórico
+    mensagem_correcao: "Responda somente com o JSON válido no formato especificado"
+    resumo_padrao: "Resumo indisponível – ver e-mail original"
+    assunto_alerta: "[RPA Dúvidas Financeiras] Classificação por IA indisponível"
+
+    provedor:
+      # simulado      = respostas por regras (config/ia_simulada.yaml), sem rede: testes e demo
+      # http_generico = provedor corporativo aprovado (PA08 – ainda não definido)
+      tipo: simulado
+      simulado:
+        arquivo_regras: "config/ia_simulada.yaml"
+      http_generico:
+        # Preencher quando a TI/Segurança definir o provedor (PA08). Nada disso fica no código.
+        endpoint: ""                # URL completa do serviço
+        modelo: ""                  # identificador do modelo no provedor
+        credencial: "ia_api_key"    # nome em segredos.obter() → variável RPA_IA_API_KEY ou Gerenciador de Credenciais
+        cabecalhos:                 # "{credencial}" é trocado pelo segredo na hora da chamada
+          Authorization: "Bearer {credencial}"
+        temperatura: 0              # RN3.3
+        modo_json: true             # RN3.3: usa parametros_modo_json se o provedor oferecer
+        # Formato da requisição e da resposta (ajustar ao contrato do provedor)
+        campo_modelo: "model"
+        campo_mensagens: "messages"
+        campo_temperatura: "temperature"
+        parametros_modo_json:
+          response_format: { type: "json_object" }
+        corpo_extra: {}
+        caminho_texto_resposta: "choices.0.message.content"
+        caminho_tokens: "usage.total_tokens"
+        caminho_modelo: "model"
+
+respostas:
+  pasta_modelos: "config/modelos"
+  link_forms_po: "https://forms.office.com/r/LINK-A-DEFINIR"
+  assinatura: "Equipe Financeiro – Contas a Pagar"
+  # Texto exibido no topo das mensagens geradas. Útil em dev/piloto para
+  # nunca confundir rascunho de teste com resposta oficial. Vazio = sem faixa.
+  faixa_ambiente: ""
+  # Prefixo do assunto no encaminhamento para análise manual (RF08)
+  prefixo_manual: "[MANUAL – {motivo}]"
+  rotulos_motivo_manual:
+    SAP: "SAP"
+    NAO_IDENTIFICADO: "NÃO IDENTIFICADO"
+    BAIXA_CONFIANCA: "BAIXA CONFIANÇA"
+    FORA_DA_LISTA: "FORA DA LISTA"
+    FORA_DO_ESCOPO: "FORA DO ESCOPO"
+    # v0.2.0 – classificação por IA (RN7.1)
+    MULTIPLAS_DUVIDAS: "MÚLTIPLAS DÚVIDAS"
+    EXCECAO: "EXCEÇÃO"
+    SEM_RESPOSTA_PADRAO: "SEM RESPOSTA PADRÃO"
+    CATEGORIA_DESABILITADA: "CATEGORIA DESABILITADA"
+    CATEGORIA_SEM_TUTORIAL: "CATEGORIA SEM TUTORIAL"
+    IA_INDISPONIVEL: "IA INDISPONÍVEL"
+    RESPOSTA_IA_INVALIDA: "RESPOSTA DA IA INVÁLIDA"
+  # Responder a todos (true) ou só ao remetente + analistas em cópia (false)
+  responder_todos: false
+
+tutoriais:
+  arquivo: "config/tutoriais.yaml"
+
+registro:
+  pasta_logs: "logs"
+  nivel_log: "INFO"
+  banco_estado: "dados/estado.db"            # idempotência + histórico (RNF01)
+  planilha_controle: "dados/registro_controle.xlsx"   # RF10 / RNF03
+
+extracao:
+  # Trecho do histórico guardado em historico_resumido (contexto para a IA – E1)
+  limite_historico: 2000
+  # Linhas que marcam o início do histórico citado (regex, sem acento,
+  # minúsculas). Tudo a partir da primeira ocorrência é descartado.
+  marcadores_historico:
+    - '^-{2,}\s*(mensagem original|original message)\s*-{2,}'
+    - '^(de|from):\s.+'
+    - '^em .{3,120} escreveu:?$'
+    - '^on .{3,120} wrote:?$'
+    - '^_{10,}$'
+    - '^>'
+  # Linhas que marcam o início da assinatura/fechamento (regex, linha inteira)
+  marcadores_assinatura:
+    - '^--\s*$'
+    - '^(atenciosamente|att|att\.|att,|atte|cordialmente|abracos|abs|obrigad[oa]|grat[oa]|saudacoes|best regards|regards|thanks)[\s,.!]*$'
+    - '^enviado do meu (iphone|android|celular).*$'
+    - '^sent from my .*$'
+  # Avisos legais que também são descartados (regex, trecho)
+  marcadores_aviso_legal:
+    - 'aviso de confidencialidade'
+    - 'esta mensagem.{0,40}(confidencial|destinatario)'
+    - 'this (e-?mail|message).{0,40}confidential'

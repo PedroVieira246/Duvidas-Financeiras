@@ -1,0 +1,80 @@
+# =============================================================================
+# Perfil DEV – caixa corporativa INDIVIDUAL do desenvolvedor (Outlook clássico)
+#
+# v0.2.1: lê direto da CAIXA DE ENTRADA, mas só os e-mails com "[RPA-TESTE]"
+# no assunto recebidos a partir de recebidos_desde. Os demais e-mails da
+# caixa não são lidos nem alterados. Como a conta está no Outlook como
+# Exchange ActiveSync (o Move via COM falha), o modo é "sem mover": o e-mail
+# tratado fica na Caixa de Entrada, marcado como lido e com a categoria
+# "RPA - …", e não é lido de novo. Envio real desligado e trava de
+# destinatários ligada: só gera rascunhos para endereços internos.
+#
+# Para repetir o teste de um e-mail: rpa.bat reprocessar <PROTOCOLO> e, no
+# Outlook, remova a categoria "RPA - …" do e-mail.
+#
+# Antes do primeiro uso, troque os valores <PREENCHER>. O comando
+#   python -m rpa_duvidas verificar --perfil dev
+# aponta o que ainda falta.
+# =============================================================================
+
+ambiente: dev
+
+caixa:
+  tipo: outlook_com
+  conta: ""                                  # vazio = sua conta padrão
+  pasta_entrada: "@inbox"                    # Caixa de Entrada principal
+  # Só e-mails de teste: o filtro é o que protege os seus e-mails reais.
+  # NÃO deixe vazio nesta caixa pessoal.
+  filtro_assunto: "[RPA-TESTE]"
+  recebidos_desde: "2026-10-27"              # ignora e-mails anteriores ao teste
+  max_varredura: 300
+  mover_apos_tratar: false                   # conta ActiveSync: não move, só categoriza
+  # Usadas só se mover_apos_tratar voltar a true (conta como Microsoft Exchange)
+  pastas_destino:
+    respondidos: "@inbox/RPA_Teste/Respondidos"
+    encaminhados: "@inbox/RPA_Teste/Encaminhados"
+    erro: "@inbox/RPA_Teste/Erro"
+    ignorados: "@inbox/RPA_Teste/Ignorados"
+  criar_pastas_ausentes: true
+  lote_maximo: 20
+
+execucao:
+  envio_real: false
+
+seguranca:
+  destinatarios_permitidos:
+    - "@gateware.com.br"    # ex.: "@empresa.com.br"
+
+destinatarios:
+  analistas_cc:
+    - "pedro.vieira.t@gateware.com.br"
+  analise_manual:
+    padrao:
+      - "pedro.vieira.t@gateware.com.br"
+  avisos_erro:
+    - "pedro.vieira.t@gateware.com.br"
+
+filtros:
+  # Em dev os "fornecedores" são você e colegas que enviam e-mails de teste.
+  arquivo_fornecedores: "config/fornecedores_dev.yaml"
+  # Em dev os testes vêm do domínio interno: o filtro de e-mail interno (RN2.2)
+  # fica DESLIGADO, senão todos os e-mails de teste iriam para Ignorados.
+  dominios_internos: []
+
+# Para testar a IA em dev (sem IA real): classificacao.tipo: ia com o provedor
+# simulado (padrão do settings.yaml). Envio real continua desligado.
+classificacao:
+  tipo: palavras_chave
+
+tutoriais:
+  # Enquanto os tutoriais não estão publicados no SharePoint, dev usa os
+  # tutoriais fictícios. Depois, trocar para "config/tutoriais.yaml".
+  arquivo: "config/tutoriais_demo.yaml"
+
+respostas:
+  faixa_ambiente: "[AMBIENTE DE TESTE – resposta gerada automaticamente pelo RPA, não enviar ao fornecedor]"
+
+registro:
+  nivel_log: "DEBUG"
+  banco_estado: "dados/dev/estado.db"
+  planilha_controle: "dados/dev/registro_controle.xlsx"

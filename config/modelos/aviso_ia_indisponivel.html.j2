@@ -1,0 +1,10 @@
+{#- Aviso único aos analistas quando a IA falha várias vezes seguidas no mesmo ciclo (RNF-IA03).
+    Variáveis: falhas, data, faixa_ambiente. -#}
+<div style="font-family:Segoe UI,Arial,sans-serif;font-size:10pt;color:#1e293b">
+{%- if faixa_ambiente %}<p style="color:#92400e;font-weight:600">{{ faixa_ambiente }}</p>{% endif %}
+<p><b>RPA Dúvidas Financeiras – classificação por IA indisponível</b></p>
+<p>A IA de classificação falhou {{ falhas }} vezes seguidas neste ciclo ({{ data }}).
+Ela não será chamada no restante do ciclo: os próximos e-mails serão encaminhados para análise manual
+com o motivo "IA INDISPONÍVEL". Nenhum e-mail ficou sem tratamento.</p>
+<p>Se o problema continuar nos próximos ciclos, acione a sustentação do robô.</p>
+</div>

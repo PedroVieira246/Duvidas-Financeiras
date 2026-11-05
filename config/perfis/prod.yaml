@@ -1,0 +1,74 @@
+# =============================================================================
+# Perfil PROD – caixa oficial da automação (conta de serviço / caixa
+# compartilhada), executado na VM com Outlook clássico (piloto do MVP).
+#
+# BLOQUEADO até a TI entregar a conta de serviço e a VM (F19).
+# Checklist completo em docs/07_migracao_caixa_oficial.md.
+#
+# A migração é só isto: preencher este arquivo, rodar
+#   python -m rpa_duvidas verificar --perfil prod
+# e trocar o perfil no Agendador de Tarefas. Nenhuma linha de código muda.
+# =============================================================================
+
+ambiente: prod
+
+caixa:
+  tipo: outlook_com
+  conta: "<PREENCHER-caixa-da-automacao>"          # ex.: automacao.duvidas@empresa.com.br
+  pasta_entrada: "@inbox"
+  pastas_destino:
+    respondidos: "@inbox/Respondidos"
+    encaminhados: "@inbox/Encaminhados"
+    erro: "@inbox/Erro"
+    ignorados: "@inbox/Ignorados"
+  criar_pastas_ausentes: false                     # pastas criadas/liberadas pela TI
+  enviar_em_nome_de: "<PREENCHER-caixa-da-automacao>"
+  lote_maximo: 50
+
+execucao:
+  # Piloto começa em rascunho (etapa 5). Só virar true após aprovação dos
+  # analistas e meta de acerto atingida.
+  envio_real: false
+
+seguranca:
+  destinatarios_permitidos: []                     # prod responde a fornecedores externos
+
+destinatarios:
+  analistas_cc:
+    - "<PREENCHER-caixa-dos-analistas>"
+  analise_manual:
+    padrao:
+      - "<PREENCHER-caixa-dos-analistas>"
+    por_motivo: {}                                 # ex.: tributário → Anelise (a confirmar)
+  avisos_erro:
+    - "<PREENCHER-caixa-dos-analistas>"
+
+filtros:
+  arquivo_fornecedores: "config/fornecedores.yaml"      # VAZIA até a S06: tudo iria para FORA DA LISTA (R8)
+  dominios_internos:                                    # E2 – RN2.2 (destino final em aberto – PA09)
+    - "<PREENCHER-dominio-corporativo>"                 # ex.: "empresa.com.br"
+  spam:
+    ativo: false                                        # PA10: ligar só se a TI recomendar o SCL
+
+classificacao:
+  # Continua palavras_chave até o provedor de IA ser aprovado (PA08) e o limite
+  # calibrado com a massa real (seção 6.2). Para ligar a IA:
+  #   tipo: ia
+  #   ia:
+  #     limite_confianca: 0.80
+  #     provedor:
+  #       tipo: http_generico
+  #       http_generico:
+  #         endpoint: "<PREENCHER-endpoint-da-IA-corporativa>"
+  #         modelo: "<PREENCHER-modelo>"
+  # e cadastre a credencial: python -m keyring set rpa_duvidas ia_api_key
+  tipo: palavras_chave
+
+respostas:
+  link_forms_po: "<PREENCHER-link-oficial-do-forms>"
+  faixa_ambiente: ""
+
+registro:
+  nivel_log: "INFO"
+  banco_estado: "dados/prod/estado.db"
+  planilha_controle: "dados/prod/registro_controle.xlsx"

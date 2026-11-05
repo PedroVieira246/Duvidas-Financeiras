@@ -1,0 +1,37 @@
+# =============================================================================
+# Categoria → tutorial anexado (RF06, seção 6 da especificação)
+#
+# raiz: pasta do SharePoint sincronizada pelo OneDrive no Explorer.
+#       Marque-a como "Sempre manter neste dispositivo", senão o arquivo pode
+#       existir só na nuvem e o anexo falha (o robô detecta e manda para Erro).
+# padrao: glob do arquivo dentro da subpasta. Havendo mais de um, vale o de
+#         modificação mais recente (até a área definir regra de versão).
+#
+# Nomes de subpasta abaixo vêm da pasta de rede atual ("01.Material
+# fornecedor") e PRECISAM ser confirmados quando a Anelise publicar os
+# tutoriais no SharePoint (solicitação S05).
+# =============================================================================
+
+raiz: "${USERPROFILE}/<PREENCHER-Empresa>/<PREENCHER-Site> - Documentos/Tutoriais"
+limite_anexo_mb: 20          # ajustar ao limite da organização
+exigir_arquivo_local: true   # recusa arquivo que existe só na nuvem (OneDrive)
+
+categorias:
+  TUT_CONNECT:
+    pasta: "04. Suporte Connect"
+    padrao: "*.pptx"
+    descricao: "Acesso ao Connect"
+  TUT_UPLOAD_NF:
+    pasta: "Upload de NF"
+    # v0.2.1: a área envia este tutorial em PDF (histórico de e-mails, Doc1).
+    # Confirmar o arquivo oficial com a Anelise (S05 / P3 do Doc2).
+    padrao: "*Upload e consulta de NFs*.pdf"
+    descricao: "Upload e consulta de NF no PYM (Connect)"
+  TUT_REEMBOLSO:
+    pasta: "Reembolso"
+    padrao: "*Reembolso*.pptx"
+    descricao: "Como abrir um chamado de Reembolso"
+  TUT_CADASTRO:
+    pasta: "03. Tutorial de acessos"
+    padrao: "*.pptx"
+    descricao: "Atualização de cadastro"

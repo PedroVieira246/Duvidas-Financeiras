@@ -1,0 +1,13 @@
+{#- Aviso aos analistas quando um e-mail cai em Erro (RNF02). -#}
+<div style="font-family:Segoe UI,Arial,sans-serif;font-size:10pt;color:#1e293b">
+{%- if faixa_ambiente %}<p style="color:#92400e;font-weight:600">{{ faixa_ambiente }}</p>{% endif %}
+<p><b>O RPA Dúvidas Financeiras não conseguiu tratar um e-mail.</b> {% if movido is not defined or movido %}Ele foi movido para a pasta <b>{{ pasta_erro }}</b>{% else %}Ele continua na pasta de entrada, com a categoria <b>RPA - Erro</b>,{% endif %} e precisa de tratamento manual.</p>
+<table style="border-collapse:collapse;font-size:10pt">
+<tr><td style="padding:2px 8px"><b>Remetente</b></td><td>{{ remetente }}</td></tr>
+<tr><td style="padding:2px 8px"><b>Assunto</b></td><td>{{ assunto }}</td></tr>
+<tr><td style="padding:2px 8px"><b>Recebido em</b></td><td>{{ recebido }}</td></tr>
+<tr><td style="padding:2px 8px"><b>Categoria</b></td><td>{{ categoria or "—" }}</td></tr>
+<tr><td style="padding:2px 8px"><b>Erro</b></td><td>{{ erro }}</td></tr>
+<tr><td style="padding:2px 8px"><b>Protocolo</b></td><td>{{ protocolo }}</td></tr>
+</table>
+</div>

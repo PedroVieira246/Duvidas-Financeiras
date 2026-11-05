@@ -1,0 +1,62 @@
+# =============================================================================
+# Classificação por IA (F08) – categorias do .docx e habilitação da resposta
+# automática (especificação funcional de 22/10/2026, seções 4, 5.2 e 6.4).
+#
+# A IA devolve um código C (C03, C05...). O RPA converte esse código para a
+# categoria do robô (TUT_*) ou para MANUAL, com as regras D1–D7 (seção 6.1).
+#
+# categorias.<código>:
+#   descricao            nome da categoria (aparece na nota ao analista)
+#   tutorial             categoria do robô usada na resposta (TUT_*), ou null
+#                        quando não existe resposta padrão
+#   resposta_automatica  true  = pode responder com o tutorial (se D1–D7 deixarem)
+#                        false = sempre encaminha (D6 – CATEGORIA_DESABILITADA)
+#   motivo_manual        motivo usado pela regra D2 quando tutorial = null
+#
+# Código devolvido pela IA que estiver em codigos_validos, mas não aparecer em
+# "categorias", vai para manual com o motivo CATEGORIA_SEM_TUTORIAL (seção 3, E5).
+#
+# Para mudar a lista de códigos ou de sinais é preciso uma NOVA versão do
+# prompt (config/prompts/classificacao_vN.txt) – RNF-IA02.
+# =============================================================================
+
+# Lista fechada do contrato de saída (seção 5.1 – regras V3 e V4)
+codigos_validos: [C03, C05, C06, C07, C99]
+
+# Lista fechada de sinais de exceção (seção 5.2 – regra V8)
+sinais_excecao:
+  - ERRO_SISTEMA
+  - TUTORIAL_JA_ENVIADO
+  - PEDIDO_PO
+  - STATUS_OU_PRAZO
+  - ALTERACAO_RESPONSAVEL
+  - EMAIL_SEM_ACESSO
+  - DEPENDENCIA_CADASTRAL_INTERNA
+  - APROVACAO_ELEGIBILIDADE
+  - DOCUMENTACAO_REEMBOLSO
+  - PEDIDO_DE_EXCECAO
+  - MENSAGEM_INTERNA
+
+categorias:
+  C03:
+    descricao: "Envio / upload de NF"
+    tutorial: TUT_UPLOAD_NF
+    resposta_automatica: true
+  C05:
+    descricao: "Cadastro de fornecedor"
+    tutorial: TUT_CADASTRO
+    resposta_automatica: true
+  C06:
+    descricao: "Reembolso"
+    tutorial: TUT_REEMBOLSO
+    resposta_automatica: false        # desligada até a decisão PA03 (mudança M1)
+  C07:
+    descricao: "Formulários (Forms)"
+    tutorial: null                    # padrão de resposta não comprovado (PA04)
+    resposta_automatica: false
+    motivo_manual: SEM_RESPOSTA_PADRAO
+  C99:
+    descricao: "Não mapeada"
+    tutorial: null
+    resposta_automatica: false
+    motivo_manual: NAO_IDENTIFICADO

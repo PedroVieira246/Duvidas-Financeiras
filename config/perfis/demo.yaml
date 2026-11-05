@@ -1,0 +1,58 @@
+# =============================================================================
+# Perfil DEMO – caixa simulada em disco. Roda em qualquer máquina, sem Outlook.
+# Usado nos testes automatizados e na demonstração aos interessados.
+#
+#   python scripts/preparar_demo.py        (recria a caixa e a massa fictícia)
+#   python -m rpa_duvidas executar --perfil demo
+#
+# As mensagens geradas viram arquivos HTML em
+#   dados_teste/caixa_simulada/saida/
+# e podem ser abertas no navegador.
+# =============================================================================
+
+ambiente: demo
+
+caixa:
+  tipo: arquivo
+  pasta_entrada: "entrada"
+  pastas_destino:
+    respondidos: "respondidos"
+    encaminhados: "encaminhados"
+    erro: "erro"
+    ignorados: "ignorados"
+  criar_pastas_ausentes: true
+  arquivo:
+    raiz: "dados_teste/caixa_simulada"
+
+execucao:
+  envio_real: false
+
+seguranca:
+  destinatarios_permitidos:
+    - "@fornecedor-exemplo.com.br"
+    - "@outro-fornecedor.com.br"
+    - "@empresa-exemplo.com.br"
+
+destinatarios:
+  analistas_cc:
+    - "analistas.cap@empresa-exemplo.com.br"
+  analise_manual:
+    padrao:
+      - "analistas.cap@empresa-exemplo.com.br"
+    por_motivo: {}
+  avisos_erro:
+    - "analistas.cap@empresa-exemplo.com.br"
+
+filtros:
+  arquivo_fornecedores: "config/fornecedores_demo.yaml"
+
+respostas:
+  link_forms_po: "https://forms.office.com/r/EXEMPLO-SOLICITACAO-PO"
+  faixa_ambiente: "[DEMONSTRAÇÃO – dados fictícios]"
+
+tutoriais:
+  arquivo: "config/tutoriais_demo.yaml"
+
+registro:
+  banco_estado: "dados/demo/estado.db"
+  planilha_controle: "dados/demo/registro_controle.xlsx"

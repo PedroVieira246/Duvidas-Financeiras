@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rpa-duvidas-financeiras"
+version = "0.2.1"
+description = "RPA Dúvidas Financeiras – Frente 1: triagem e resposta automática de e-mails de fornecedores"
+requires-python = ">=3.10"
+dependencies = [
+  "pyyaml>=6.0", "jinja2>=3.1", "beautifulsoup4>=4.12", "openpyxl>=3.1", "keyring>=24.0",
+  "pywin32>=306; sys_platform == 'win32'",
+]
+
+[project.scripts]
+rpa-duvidas = "rpa_duvidas.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["outlook: exige Windows com Outlook clássico (pulado nas demais máquinas)"]

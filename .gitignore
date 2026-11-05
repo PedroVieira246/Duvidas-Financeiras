@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+logs/*.log
+dados/
+relatorios/
+dados_teste/caixa_simulada/
+*.lock
+~$*

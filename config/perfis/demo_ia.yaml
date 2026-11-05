@@ -1,0 +1,67 @@
+# =============================================================================
+# Perfil DEMO_IA – igual ao DEMO (caixa simulada em disco, sem Outlook), mas
+# com a CLASSIFICAÇÃO POR IA (F08 – v0.2.0) usando o provedor SIMULADO
+# (config/ia_simulada.yaml): nenhuma IA real é chamada, nada sai pela rede.
+#
+#   python scripts/preparar_demo.py
+#   python -m rpa_duvidas executar --perfil demo_ia
+#
+# Mostra o fluxo E1–E8: resposta com tutorial quando D1–D7 permitem e
+# encaminhamento com resumo da IA nos demais casos.
+# =============================================================================
+
+ambiente: demo
+
+caixa:
+  tipo: arquivo
+  pasta_entrada: "entrada"
+  pastas_destino:
+    respondidos: "respondidos"
+    encaminhados: "encaminhados"
+    erro: "erro"
+    ignorados: "ignorados"
+  criar_pastas_ausentes: true
+  arquivo:
+    raiz: "dados_teste/caixa_simulada"
+
+execucao:
+  envio_real: false
+
+seguranca:
+  destinatarios_permitidos:
+    - "@fornecedor-exemplo.com.br"
+    - "@outro-fornecedor.com.br"
+    - "@empresa-exemplo.com.br"
+
+destinatarios:
+  analistas_cc:
+    - "analistas.cap@empresa-exemplo.com.br"
+  analise_manual:
+    padrao:
+      - "analistas.cap@empresa-exemplo.com.br"
+    por_motivo: {}
+  avisos_erro:
+    - "analistas.cap@empresa-exemplo.com.br"
+
+filtros:
+  arquivo_fornecedores: "config/fornecedores_demo.yaml"
+  dominios_internos:                       # E2 – RN2.2: e-mail da própria Companhia vai para Ignorados
+    - "empresa-exemplo.com.br"
+
+classificacao:
+  tipo: ia                                 # limite efetivo: classificacao.ia.limite_confianca (0,80)
+  ia:
+    limite_confianca: 0.80
+    provedor:
+      tipo: simulado                       # nunca chama IA real
+
+respostas:
+  link_forms_po: "https://forms.office.com/r/EXEMPLO-SOLICITACAO-PO"
+  faixa_ambiente: "[DEMONSTRAÇÃO – dados fictícios]"
+
+tutoriais:
+  arquivo: "config/tutoriais_demo.yaml"
+
+registro:
+  banco_estado: "dados/demo_ia/estado.db"
+  planilha_controle: "dados/demo_ia/registro_controle.xlsx"

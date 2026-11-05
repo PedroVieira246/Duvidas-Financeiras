@@ -1,0 +1,17 @@
+{#- =====================================================================
+    Modelo BASE das respostas ao fornecedor (RF05).
+    TEXTO PROVISÓRIO – aguardando redação/aprovação da área (solicitação S09).
+    Variáveis disponíveis: faixa_ambiente, assinatura, protocolo, data,
+    assunto, nome_remetente, link_forms, nome_arquivo, descricao_tutorial.
+    ===================================================================== -#}
+<div style="font-family:Segoe UI,Arial,sans-serif;font-size:11pt;color:#1e293b">
+{%- if faixa_ambiente %}
+<p style="background:#fef3c7;color:#92400e;padding:6px 10px;border-radius:4px;font-weight:600">{{ faixa_ambiente }}</p>
+{%- endif %}
+<p>Prezado(a) fornecedor(a),</p>
+{% block conteudo %}{% endblock %}
+<p>Se a sua dúvida não foi resolvida, basta responder a este e-mail que a nossa equipe dará continuidade ao atendimento.</p>
+<p>Atenciosamente,<br><b>{{ assinatura }}</b></p>
+<p style="color:#64748b;font-size:9pt">Resposta automática · protocolo {{ protocolo }} · {{ data }}</p>
+</div>
+<br>

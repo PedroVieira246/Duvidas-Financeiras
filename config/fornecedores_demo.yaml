@@ -1,0 +1,5 @@
+# Fornecedores FICTÍCIOS da demonstração.
+emails:
+  - "contato@outro-fornecedor.com.br"
+dominios:
+  - "fornecedor-exemplo.com.br"

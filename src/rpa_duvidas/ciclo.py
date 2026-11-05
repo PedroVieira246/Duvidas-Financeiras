@@ -1,0 +1,363 @@
+"""Orquestração de um ciclo (F17 base + F12, F13, F14, F16).
+
+Todo e-mail lido termina em um destino: respondido, encaminhado, ignorado
+(resposta automática) ou erro. O erro em um e-mail não interrompe o ciclo
+(RNF02) e nenhum e-mail é respondido duas vezes (RNF01).
+
+Sequência por e-mail::
+
+    já está no registro? ──sim──> reconcilia (só move) ou reprocessa se deu erro antes
+          │não
+    extrai texto ─> resposta automática? ─> Ignorados
+          │
+    mensagem do próprio RPA? ─> Ignorados (motivo PROPRIO_RPA)              [v0.2.1]
+          │
+    remetente interno? / spam (SCL)? ─> Ignorados (motivo INTERNO / SPAM)   [v0.2.0 – E2]
+          │
+    fornecedor na lista? ──não──> encaminha [MANUAL – FORA DA LISTA]
+          │sim
+    classifica (palavras-chave ou IA) ─> confiança < limite? ─> MANUAL (BAIXA CONFIANÇA)
+          │
+    grava EM_ANDAMENTO ─> responde/encaminha ─> grava ação executada
+          ─> marca lido + categoria + move ─> grava evento
+"""
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Dict, List, Optional
+
+from . import extracao
+from .caixa.base import CaixaEmail
+from .classificacao.base import Classificador
+from .config import Config
+from .filtros import FiltroInterno, FiltroSpam, ListaFornecedores
+from .modelos import (Acao, Categoria, Classificacao, Destino, EmailRecebido, MotivoIgnorado, MotivoManual,
+                      Resultado, Status)
+from .registro import Registro
+from .respostas import GeradorRespostas, protocolo
+from .tutoriais import RepositorioTutoriais
+
+log = logging.getLogger(__name__)
+
+
+class ErroSeguranca(Exception):
+    """Destinatário fora da lista permitida no ambiente atual."""
+
+
+@dataclass
+class ResumoCiclo:
+    ciclo_id: str
+    modo: str
+    inicio: datetime = field(default_factory=datetime.now)
+    resultados: List[Resultado] = field(default_factory=list)
+
+    def contagem(self) -> Dict[str, int]:
+        c = {"lidos": len(self.resultados), "respondidos": 0, "encaminhados": 0, "ignorados": 0, "erros": 0, "reconciliados": 0}
+        for r in self.resultados:
+            if r.status == Status.ERRO:
+                c["erros"] += 1
+            elif r.status == Status.RECONCILIADO:
+                c["reconciliados"] += 1
+            elif r.acao in (Acao.RESPONDER_TUTORIAL, Acao.RESPONDER_FORMS):
+                c["respondidos"] += 1
+            elif r.acao == Acao.ENCAMINHAR_MANUAL:
+                c["encaminhados"] += 1
+            elif r.acao == Acao.IGNORAR:
+                c["ignorados"] += 1
+        return c
+
+
+class Robo:
+    """Reúne as peças configuradas e executa ciclos."""
+
+    def __init__(
+        self,
+        cfg: Config,
+        caixa: CaixaEmail,
+        classificador: Classificador,
+        registro: Registro,
+        tutoriais: RepositorioTutoriais,
+        respostas: GeradorRespostas,
+        fornecedores: ListaFornecedores,
+        filtro_interno: Optional[FiltroInterno] = None,
+        filtro_spam: Optional[FiltroSpam] = None,
+    ):
+        self.cfg = cfg
+        self.caixa = caixa
+        self.classificador = classificador
+        self.registro = registro
+        self.tutoriais = tutoriais
+        self.respostas = respostas
+        self.fornecedores = fornecedores
+        self.envio_real = cfg.envio_real
+        self.modo = "REAL" if self.envio_real else "SIMULACAO"
+        self.permitidos = list(cfg.get("seguranca.destinatarios_permitidos", []) or [])
+        self.cats = cfg.get("caixa.categorias_outlook", {}) or {}
+        self.mover = bool(cfg.get("caixa.mover_apos_tratar", True))
+        self.marcas_rpa = cfg.get("filtros.mensagens_do_rpa", {}) or {}
+        self.filtro_interno = filtro_interno or FiltroInterno(
+            cfg.get("filtros.dominios_internos", []) or [],
+            [cfg.get("caixa.conta", ""), cfg.get("caixa.enviar_em_nome_de", "")],
+        )
+        self.filtro_spam = filtro_spam or FiltroSpam.de_config(cfg.get("filtros.spam", {}))
+
+    # ------------------------------------------------------------------ #
+    def executar_ciclo(self) -> ResumoCiclo:
+        resumo = ResumoCiclo(ciclo_id=f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:4]}", modo=self.modo)
+        lote = int(self.cfg.get("caixa.lote_maximo", 50))
+        log.info("Ciclo %s iniciado | perfil=%s | modo=%s | lote=%d", resumo.ciclo_id, self.cfg.perfil, self.modo, lote)
+        if hasattr(self.classificador, "iniciar_ciclo"):
+            self.classificador.iniciar_ciclo()          # zera o contador de falhas da IA (RNF-IA03)
+        emails = self.caixa.ler_pendentes(lote)
+        log.info("%d e-mail(s) pendente(s)", len(emails))
+        for email in emails:
+            inicio = time.perf_counter()
+            r = self._tratar_com_protecao(email)
+            r.duracao_ms = int((time.perf_counter() - inicio) * 1000)
+            try:
+                self.registro.gravar(r, resumo.ciclo_id, self.modo)
+            except Exception:  # o registro não pode derrubar o ciclo
+                log.exception("Falha ao gravar o registro do e-mail %s", email.id_mensagem)
+            log.info(
+                "[%s] %s | %s | %s | %s → %s %s",
+                protocolo(email), email.remetente or "-", (email.assunto or "")[:60],
+                r.classificacao.categoria if r.classificacao else "-", r.acao, r.status,
+                f"| erro: {r.erro}" if r.erro else "",
+            )
+            resumo.resultados.append(r)
+        self.registro.gravar_ciclo(resumo.ciclo_id, self.modo, resumo.inicio, resumo.contagem())
+        log.info("Ciclo %s concluído: %s", resumo.ciclo_id, resumo.contagem())
+        return resumo
+
+    # ------------------------------------------------------------------ #
+    def _tratar_com_protecao(self, email: EmailRecebido) -> Resultado:
+        r = Resultado(email=email)
+        try:
+            anterior = self.registro.estado(email.chave)
+            if anterior is not None and self._deve_reconciliar(anterior):
+                return self._reconciliar(email, anterior, r)
+            extracao.processar(
+                email, self.cfg.get("extracao", {}) or {}, self.cfg.get("filtros.assuntos_resposta_automatica", []),
+                self.marcas_rpa,
+            )
+            self._tratar(email, r)
+        except Exception as erro:  # RNF02
+            log.error("Erro ao tratar %s: %s", email.id_mensagem, erro)
+            log.debug("Detalhe do erro", exc_info=True)
+            self._registrar_erro(email, r, erro)
+        return r
+
+    @staticmethod
+    def _deve_reconciliar(anterior) -> bool:
+        if anterior["acao_executada"]:
+            return True                       # já respondeu/encaminhou: nunca repetir
+        if anterior["status"] == Status.EM_ANDAMENTO:
+            return True                       # ciclo anterior caiu no meio: não arriscar
+        if anterior["status"] == Status.IGNORADO:
+            return True
+        return False                          # ERRO sem ação executada: pode tentar de novo
+
+    def _reconciliar(self, email: EmailRecebido, anterior, r: Resultado) -> Resultado:
+        r.acao = anterior["acao"] or Acao.NENHUMA
+        if anterior["status"] == Status.EM_ANDAMENTO and not anterior["acao_executada"]:
+            raise RuntimeError(
+                "Execução anterior foi interrompida durante o tratamento deste e-mail. "
+                "Verifique em Itens Enviados/Rascunhos se a resposta saiu antes de reprocessar."
+            )
+        destino = anterior["destino"]
+        if destino not in (self.cfg.get("caixa.pastas_destino", {}) or {}):
+            destino = Destino.ERRO
+        # Modo sem mover: a categoria é o que marca o e-mail como tratado. Sem ela,
+        # ele voltaria a ser lido a cada ciclo.
+        categoria = None if self.mover else self._categoria_reconciliacao(anterior, destino)
+        self.caixa.finalizar(email, destino, categoria)
+        r.status = Status.RECONCILIADO
+        r.destino = destino if self.mover else ""
+        acao = f"apenas movido para {destino}" if self.mover else "apenas marcado com a categoria do RPA"
+        r.erro = f"já tratado antes (status {anterior['status']}); {acao}"
+        log.warning("[%s] e-mail já tratado reapareceu na entrada – %s", protocolo(email), acao)
+        return r
+
+    def _categoria_reconciliacao(self, anterior, destino: str) -> Optional[str]:
+        if anterior["status"] == Status.SIMULADO:
+            return self.cats.get("simulado")
+        chave = {Destino.RESPONDIDOS: "respondido", Destino.ENCAMINHADOS: "encaminhado",
+                 Destino.IGNORADOS: "ignorado"}.get(destino, "erro")
+        return self.cats.get(chave)
+
+    # ------------------------------------------------------------------ #
+    def _tratar(self, email: EmailRecebido, r: Resultado) -> None:
+        # 1. resposta automática (RF03)
+        if email.resposta_automatica:
+            r.acao, r.destino = Acao.IGNORAR, Destino.IGNORADOS
+            self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
+            self.caixa.finalizar(email, Destino.IGNORADOS, self.cats.get("ignorado"))
+            r.status = Status.IGNORADO
+            return
+
+        # 1a. mensagem gerada pelo próprio RPA que voltou para a caixa (v0.2.1 – evita laço)
+        if email.gerada_pelo_rpa:
+            self._ignorar(email, r, MotivoIgnorado.PROPRIO_RPA, email.motivo_gerada_pelo_rpa)
+            return
+
+        # 1b. remetente interno e spam (E2 – RN2.2, RN2.3): Ignorados, sem chamar a IA
+        interno, detalhe = self.filtro_interno.interno(email.remetente)
+        if interno:
+            self._ignorar(email, r, MotivoIgnorado.INTERNO, detalhe)
+            return
+        spam, detalhe = self.filtro_spam.spam(email.cabecalhos)
+        if spam:
+            self._ignorar(email, r, MotivoIgnorado.SPAM, detalhe)
+            return
+
+        # 2. remetente fora da lista (RF03)
+        if self.cfg.get("filtros.validar_fornecedor", True) and not self.fornecedores.conhecido(email.remetente):
+            c = Classificacao(Categoria.MANUAL, 0.0, "remetente fora da lista de fornecedores",
+                              motivo_manual=MotivoManual.FORA_DA_LISTA)
+        else:
+            # 3. classificação (RF04). O e-mail inteiro vai junto (lacuna R1)
+            c = self.classificador.classificar(email.assunto, email.corpo_limpo, email=email)
+            c.detalhes.setdefault("classificador", self.cfg.classificador)
+            self._apos_classificacao_ia(email, c)
+            if c.categoria != Categoria.MANUAL and c.confianca < self.cfg.limite_confianca:
+                c.detalhes.setdefault("categoria_sugerida", c.categoria)
+                c.motivo = f"confiança {c.confianca:.2f} < limite {self.cfg.limite_confianca:.2f} | {c.motivo}"
+                c.categoria, c.motivo_manual = Categoria.MANUAL, MotivoManual.BAIXA_CONFIANCA
+        r.classificacao = c
+
+        # 4. ação
+        if c.categoria in Categoria.TUTORIAIS:
+            self._responder_tutorial(email, c, r)
+        elif c.categoria == Categoria.FORMS_PO:
+            self._responder_forms(email, r)
+        else:
+            self._encaminhar_manual(email, c, r)
+
+    # ---- filtros e IA (v0.2.0) -------------------------------------------- #
+    def _ignorar(self, email: EmailRecebido, r: Resultado, motivo: str, detalhe: str) -> None:
+        r.acao, r.destino = Acao.IGNORAR, Destino.IGNORADOS
+        r.motivo_ignorado = f"{motivo}: {detalhe}" if detalhe else motivo
+        self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
+        self.caixa.finalizar(email, Destino.IGNORADOS, self.cats.get("ignorado"))
+        r.status = Status.IGNORADO
+
+    def _apos_classificacao_ia(self, email: EmailRecebido, c: Classificacao) -> None:
+        """Log técnico da IA (RNF-IA01, sem corpo/prompt/resumo) e alerta de falhas seguidas."""
+        d = c.detalhes
+        if d.get("classificador") != "ia":
+            return
+        log.info(
+            "[%s] IA | categoria %s | confiança %.2f | regra %s | ação %s | motivo %s | latência %s ms | "
+            "tentativas %s | tokens %s",
+            protocolo(email), d.get("categoria_docx") or "-", c.confianca, d.get("regra_decisao"),
+            c.categoria, c.motivo_manual or "-", d.get("latencia_ms"), d.get("tentativas"), d.get("tokens"),
+        )
+        consumir = getattr(self.classificador, "consumir_alerta", None)
+        falhas = consumir() if callable(consumir) else None
+        if falhas:
+            self._avisar_ia_indisponivel(falhas)
+
+    def _avisar_ia_indisponivel(self, falhas: int) -> None:
+        para = list(self.cfg.get("destinatarios.avisos_erro", []) or [])
+        if not para:
+            log.warning("destinatarios.avisos_erro vazio – aviso de IA indisponível não enviado")
+            return
+        try:
+            self._verificar_destinatarios(para)
+            corpo = self.respostas.aviso_ia_indisponivel(falhas)
+            assunto = str(self.cfg.get("classificacao.ia.assunto_alerta", "[RPA Dúvidas Financeiras] IA indisponível"))
+            self.caixa.enviar_novo(para, assunto, corpo, enviar=self.envio_real)
+        except Exception:
+            log.exception("Falha ao enviar o aviso de IA indisponível")
+
+    # ---- ações ----------------------------------------------------------- #
+    def _verificar_destinatarios(self, enderecos: List[str]) -> None:
+        bloqueados = [e for e in enderecos if not extracao.endereco_permitido(e, self.permitidos)]
+        if bloqueados:
+            raise ErroSeguranca(
+                f"Destinatário(s) fora de seguranca.destinatarios_permitidos no ambiente "
+                f"'{self.cfg.ambiente}': {', '.join(bloqueados)}"
+            )
+
+    def _finalizar_ok(self, email: EmailRecebido, destino: str, categoria_chave: str, r: Resultado) -> None:
+        r.destino = destino
+        categoria = self.cats.get(categoria_chave) if self.envio_real else self.cats.get("simulado")
+        self.caixa.finalizar(email, destino, categoria)
+        r.status = Status.CONCLUIDO if self.envio_real else Status.SIMULADO
+
+    def _responder(self, email: EmailRecebido, corpo: str, anexos, r: Resultado) -> None:
+        responder_todos = bool(self.cfg.get("respostas.responder_todos", False))
+        cc = list(self.cfg.get("destinatarios.analistas_cc", []) or [])
+        r.destinatarios = list(dict.fromkeys(self.caixa.destinatarios_resposta(email, responder_todos) + cc))
+        self._verificar_destinatarios(r.destinatarios)
+        self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
+        r.id_mensagem_gerada = self.caixa.responder(
+            email, corpo, anexos=anexos, cc=cc, responder_todos=responder_todos, enviar=self.envio_real
+        )
+        self.registro.marcar_acao_executada(email.chave)
+        self._finalizar_ok(email, Destino.RESPONDIDOS, "respondido", r)
+
+    def _responder_tutorial(self, email: EmailRecebido, c: Classificacao, r: Resultado) -> None:
+        r.acao = Acao.RESPONDER_TUTORIAL
+        tutorial = self.tutoriais.localizar(c.categoria)          # RF06: falha → Erro
+        r.arquivo_enviado = tutorial.nome
+        corpo = self.respostas.resposta(
+            email, c.categoria, nome_arquivo=tutorial.nome, descricao_tutorial=tutorial.descricao
+        )
+        self._responder(email, corpo, [tutorial.caminho], r)
+
+    def _responder_forms(self, email: EmailRecebido, r: Resultado) -> None:
+        r.acao = Acao.RESPONDER_FORMS
+        r.arquivo_enviado = "(link do Forms)"
+        corpo = self.respostas.resposta(email, Categoria.FORMS_PO)
+        self._responder(email, corpo, [], r)
+
+    def _encaminhar_manual(self, email: EmailRecebido, c: Classificacao, r: Resultado) -> None:
+        r.acao = Acao.ENCAMINHAR_MANUAL
+        motivo = c.motivo_manual or MotivoManual.NAO_IDENTIFICADO
+        rotulo = (self.cfg.get("respostas.rotulos_motivo_manual", {}) or {}).get(motivo, motivo)
+        prefixo = str(self.cfg.get("respostas.prefixo_manual", "[MANUAL – {motivo}]")).format(motivo=rotulo)
+        para = self.cfg.destino_manual(motivo)
+        if not para:
+            raise RuntimeError("Nenhum destinatário de análise manual configurado")
+        r.destinatarios = para
+        self._verificar_destinatarios(para)
+        nota = self.respostas.nota_manual(email, c, rotulo)
+        self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
+        r.id_mensagem_gerada = self.caixa.encaminhar(email, para, prefixo, nota, enviar=self.envio_real)
+        self.registro.marcar_acao_executada(email.chave)
+        self._finalizar_ok(email, Destino.ENCAMINHADOS, "encaminhado", r)
+
+    # ---- erro (RNF02) ---------------------------------------------------- #
+    def _registrar_erro(self, email: EmailRecebido, r: Resultado, erro: Exception) -> None:
+        r.status = Status.ERRO
+        r.erro = f"{type(erro).__name__}: {erro}"
+        r.destino = Destino.ERRO if self.mover else ""
+        try:
+            self.caixa.finalizar(email, Destino.ERRO, self.cats.get("erro"))
+        except Exception:
+            log.exception("Não foi possível mover %s para Erro – permanece na entrada", email.id_mensagem)
+            r.destino = ""
+            r.erro += " | e-mail NÃO movido para Erro (permanece na entrada)"
+        self._avisar_erro(email, r)
+
+    def _avisar_erro(self, email: EmailRecebido, r: Resultado) -> None:
+        para = list(self.cfg.get("destinatarios.avisos_erro", []) or [])
+        if not para:
+            log.warning("destinatarios.avisos_erro vazio – aviso de erro não enviado")
+            return
+        try:
+            self._verificar_destinatarios(para)
+            corpo = self.respostas.aviso_erro(
+                email, r.erro, r.classificacao.categoria if r.classificacao else "",
+                str(self.cfg.get("caixa.pastas_destino.erro", "Erro")),
+                movido=self.mover and bool(r.destino),
+            )
+            assunto = f"[RPA Dúvidas Financeiras] Erro no tratamento – protocolo {protocolo(email)}"
+            self.caixa.enviar_novo(para, assunto, corpo, enviar=self.envio_real)
+        except Exception:
+            log.exception("Falha ao enviar o aviso de erro de %s", email.id_mensagem)
