@@ -318,6 +318,11 @@ class Robo:
                 c.motivo = f"confiança {c.confianca:.2f} < limite {self.cfg.limite_confianca:.2f} | {c.motivo}"
                 c.categoria, c.motivo_manual = Categoria.MANUAL, MotivoManual.BAIXA_CONFIANCA
             self._aplicar_config_categoria(c)
+            if c.categoria == Categoria.FORMS_PO and not str(self.cfg.get("respostas.link_forms_po", "") or "").strip():
+                # seção 5.6: sem o link do Forms, a categoria FORMS_PO é tratada como MANUAL
+                c.detalhes.setdefault("categoria_sugerida", c.categoria)
+                c.motivo = f"link do formulário vazio na aba Tutoriais | {c.motivo}"
+                c.categoria, c.motivo_manual = Categoria.MANUAL, MotivoManual.SEM_RESPOSTA_PADRAO
         r.classificacao = c
 
         # 4. ação

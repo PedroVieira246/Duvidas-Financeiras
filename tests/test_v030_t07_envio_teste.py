@@ -31,6 +31,8 @@ def _receber_massa(fake):
                  para="maria.laura@empresa-exemplo.com.br; socio@fornecedor-exemplo.com.br",
                  cc="cobranca@outro-fornecedor.com.br", reply_to="socio@fornecedor-exemplo.com.br")
     fake.receber(de=FORNECEDOR, assunto="Ordem de compra", corpo="sem pedido de compra", id_msg="<p@x>")
+    fake.receber(de=FORNECEDOR, assunto="Reembolso", corpo="preciso de reembolso", id_msg="<t@x>",
+                 cc="socio@fornecedor-exemplo.com.br")                  # resposta com tutorial anexo (T09)
     fake.receber(de=FORNECEDOR, assunto="Pagamento", corpo="quando vou receber o pagamento?", id_msg="<s@x>")
     fake.receber(de=FORNECEDOR, assunto="Cadastro", corpo="preciso atualizar cadastro e dados bancarios",
                  id_msg="<c@x>")                                         # tutorial inexistente → erro → aviso
@@ -82,12 +84,13 @@ def test_criterio_3_nada_sai_fora_do_destino_padrao_ou_aviso_erro(
     por_id = {r.email.id_mensagem: r for r in resumo.resultados}
     if escondido:
         # a trava pegou o destinatário escondido: a resposta foi descartada e o e-mail foi para Erro
-        for chave in ("<r@x>", "<p@x>"):
+        for chave in ("<r@x>", "<p@x>", "<t@x>"):
             assert por_id[chave].status == Status.ERRO
             assert por_id[chave].erro.startswith("ErroSeguranca: destinatário fora do destino padrão")
         assert all(m.descartado for m in fake.geradas if m.Subject.startswith("RE:"))
     else:
         assert por_id["<r@x>"].destinatarios == [DESTINO_CAL]
+        assert por_id["<t@x>"].arquivo_enviado == "Como abrir um chamado de Reembolso.pptx"
         assert FORNECEDOR in por_id["<r@x>"].destinatario_original.split("; ")
 
 

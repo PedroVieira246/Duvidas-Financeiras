@@ -5,6 +5,10 @@ Regras da especificação:
   2. mais de um → o de modificação mais recente;
   3. existe, tamanho > 0 e cabe no limite de anexo;
   4. qualquer falha → ``TutorialIndisponivel`` (o ciclo manda o e-mail para Erro).
+
+v0.3.0 (D07 – seção 5.6): com ``caminho_arquivo`` preenchido (aba Tutoriais da
+planilha), vale o caminho COMPLETO do arquivo oficial; ``raiz``/``pasta``/``padrao``
+continua como alternativa para os perfis dev e demo.
 """
 from __future__ import annotations
 
@@ -41,6 +45,7 @@ def _somente_na_nuvem(caminho: Path) -> bool:
 class RepositorioTutoriais:
     def __init__(self, dados: Dict, resolver: Callable[[str], Path]):
         """``dados`` = conteúdo de tutoriais.yaml; ``resolver`` expande/resolve caminhos."""
+        self.resolver = resolver
         self.raiz = resolver(str(dados.get("raiz", "")))
         self.limite_mb = float(dados.get("limite_anexo_mb", 20))
         self.exigir_local = bool(dados.get("exigir_arquivo_local", True))
@@ -50,6 +55,8 @@ class RepositorioTutoriais:
         conf = self.categorias.get(categoria)
         if not conf:
             raise TutorialIndisponivel(f"Categoria {categoria} sem tutorial configurado em tutoriais.yaml")
+        if "caminho_arquivo" in conf:
+            return self._por_caminho(categoria, conf)
         pasta = self.raiz / str(conf.get("pasta", ""))
         if not pasta.is_dir():
             raise TutorialIndisponivel(f"Pasta do tutorial não encontrada: {pasta}")
@@ -72,6 +79,27 @@ class RepositorioTutoriais:
                 f"Arquivo com {tamanho_mb:.1f} MB excede o limite de {self.limite_mb:.0f} MB: {escolhido}"
             )
         return Tutorial(categoria, escolhido, round(tamanho_mb, 2), str(conf.get("descricao", "")))
+
+    def _por_caminho(self, categoria: str, conf: Dict) -> Tutorial:
+        bruto = str(conf.get("caminho_arquivo") or "").strip()
+        if not bruto:
+            raise TutorialIndisponivel(f"Categoria {categoria} sem caminho do arquivo do tutorial (aba Tutoriais)")
+        arquivo = self.resolver(bruto)
+        if not arquivo.is_file():
+            raise TutorialIndisponivel(f"Arquivo do tutorial não encontrado: {arquivo}")
+        if self.exigir_local and _somente_na_nuvem(arquivo):
+            raise TutorialIndisponivel(
+                f"Arquivo existe só na nuvem (OneDrive): {arquivo}. Marque a pasta como "
+                "'Sempre manter neste dispositivo'."
+            )
+        tamanho = arquivo.stat().st_size
+        if tamanho <= 0:
+            raise TutorialIndisponivel(f"Arquivo vazio: {arquivo}")
+        limite = float(conf.get("limite_mb") or self.limite_mb)
+        tamanho_mb = tamanho / (1024 * 1024)
+        if tamanho_mb > limite:
+            raise TutorialIndisponivel(f"Arquivo com {tamanho_mb:.1f} MB excede o limite de {limite:g} MB: {arquivo}")
+        return Tutorial(categoria, arquivo, round(tamanho_mb, 2), str(conf.get("descricao", "")))
 
     def verificar_todos(self) -> List[Tuple[str, bool, str]]:
         """Para o comando ``verificar``: (categoria, ok, detalhe)."""
