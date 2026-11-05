@@ -12,16 +12,20 @@ Três saídas:
 """
 from __future__ import annotations
 
+import getpass
 import json
 import logging
 import os
+import socket
 import sqlite3
 import sys
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from . import __version__
+from .config_xlsx_esquema import CODIGOS_CATEGORIA
 from .modelos import Resultado, Status
 from .respostas import protocolo
 
@@ -48,8 +52,33 @@ COLUNAS_V030 = [
     ("escritorio", "Escritório"), ("destinatario_original", "Destinatário original"),
     ("destino_respostas", "Destino das respostas"), ("enviado", "Enviado"),
     ("categoria_liberada", "Categoria liberada"), ("arquivado_em", "Arquivado em"),
+    ("maquina", "Máquina"), ("usuario_windows", "Usuário"), ("versao_app", "Versão"),
 ]
 COLUNAS_REGISTRO = COLUNAS_EVENTO + COLUNAS_V030
+
+# v0.3.0 – retorno manual (D08 – seção 6.5): preenchido pelo analista na aba Registro,
+# lido de volta para a tabela retorno_manual (fonte da verdade) a cada exportação.
+COLUNAS_RETORNO = [
+    ("avaliacao", "Avaliação"), ("categoria_correta", "Categoria correta"), ("observacao", "Observação"),
+    ("tempo_manual_min", "Tempo manual (min)"), ("revisado_por", "Revisado por"), ("data_revisao", "Data da revisão"),
+]
+AVALIACOES = ["Correto", "Categoria errada", "Deveria encaminhar", "Deveria responder", "Tutorial errado"]
+AVALIACOES_GRAVES = ("Tutorial errado", "Deveria encaminhar")
+TEMPO_MAXIMO_MIN = 240
+
+
+def _maquina() -> str:
+    try:
+        return socket.gethostname()
+    except Exception:
+        return ""
+
+
+def _usuario() -> str:
+    try:
+        return getpass.getuser()
+    except Exception:
+        return os.environ.get("USERNAME", "")
 # Colunas que entraram depois da v0.1.0 chegam a um banco antigo por ALTER TABLE (migrar – lacuna R7)
 
 _SQL = f"""
@@ -72,6 +101,10 @@ CREATE TABLE IF NOT EXISTS respostas_ia (
     data_hora TEXT, ciclo_id TEXT, protocolo TEXT, id_mensagem TEXT,
     modelo TEXT, versao_prompt TEXT, hash_prompt TEXT,
     chamada INTEGER, valida INTEGER, resposta_bruta TEXT
+);
+CREATE TABLE IF NOT EXISTS retorno_manual (
+    protocolo TEXT PRIMARY KEY, avaliacao TEXT, categoria_correta TEXT, observacao TEXT,
+    tempo_manual_min INTEGER, revisado_por TEXT, data_revisao TEXT, lido_em TEXT
 );
 CREATE TABLE IF NOT EXISTS avisos (
     chave TEXT PRIMARY KEY, enviado_em TEXT
@@ -167,6 +200,7 @@ class Registro:
         self.banco = banco
         self.perfil = perfil
         self.destino_respostas = destino_respostas
+        self.criterio: Tuple[float, int] = (0.95, 20)       # critério de liberação (§12.8) – só informativo
         self.con = sqlite3.connect(str(banco))
         self.con.row_factory = sqlite3.Row
         self.con.executescript(_SQL)
@@ -229,6 +263,7 @@ class Registro:
             "escritorio": e.escritorio, "destinatario_original": r.destinatario_original,
             "destino_respostas": self.destino_respostas, "enviado": _sn(r.enviado),
             "categoria_liberada": _sn(r.categoria_liberada), "arquivado_em": r.arquivado_em,
+            "maquina": _maquina(), "usuario_windows": _usuario(), "versao_app": __version__,
         }
         if not c and r.motivo_ignorado:
             linha["motivo"] = r.motivo_ignorado
@@ -313,29 +348,230 @@ class Registro:
     def respostas_ia(self) -> List[sqlite3.Row]:
         return self.con.execute("SELECT * FROM respostas_ia ORDER BY id").fetchall()
 
+    # ---- retorno manual (v0.3.0 – D08, seção 6.5) ----------------------- #
+    def retornos(self) -> Dict[str, sqlite3.Row]:
+        return {r["protocolo"]: r for r in self.con.execute("SELECT * FROM retorno_manual")}
+
+    def gravar_retorno(self, prot: str, valores: Dict[str, Any]) -> bool:
+        """Upsert do retorno de um protocolo. Valores vazios NÃO apagam o que já está gravado."""
+        valores = {k: v for k, v in valores.items() if v not in (None, "")}
+        if not valores:
+            return False
+        atual = self.con.execute("SELECT * FROM retorno_manual WHERE protocolo = ?", (prot,)).fetchone()
+        if atual is not None and all(str(atual[k]) == str(v) for k, v in valores.items()):
+            return False
+        agora = datetime.now().isoformat(timespec="seconds")
+        if atual is None:
+            self.con.execute("INSERT INTO retorno_manual (protocolo, lido_em) VALUES (?, ?)", (prot, agora))
+        sets = ", ".join(f"{k} = ?" for k in valores)
+        self.con.execute(f"UPDATE retorno_manual SET {sets}, lido_em = ? WHERE protocolo = ?",
+                         [*valores.values(), agora, prot])
+        self.con.commit()
+        return True
+
+    @staticmethod
+    def _validar_retorno(coluna: str, valor: Any) -> Any:
+        """Converte/valida uma célula de retorno. Valor inválido → ValueError (a célula é ignorada)."""
+        if valor is None or (isinstance(valor, str) and not valor.strip()):
+            return None
+        if coluna == "avaliacao":
+            v = str(valor).strip()
+            iguais = [a for a in AVALIACOES if a.lower() == v.lower()]
+            if not iguais:
+                raise ValueError(f"avaliação fora da lista: {v!r}")
+            return iguais[0]
+        if coluna == "categoria_correta":
+            v = str(valor).strip().upper()
+            if v not in CODIGOS_CATEGORIA:
+                raise ValueError(f"categoria inexistente: {v!r}")
+            return v
+        if coluna == "tempo_manual_min":
+            n = float(str(valor).replace(",", "."))
+            if not n.is_integer() or not 0 <= n <= TEMPO_MAXIMO_MIN:
+                raise ValueError(f"tempo deve ser inteiro de 0 a {TEMPO_MAXIMO_MIN}: {valor!r}")
+            return int(n)
+        if coluna == "data_revisao":
+            if isinstance(valor, datetime):
+                return valor.date().isoformat()
+            if isinstance(valor, date):
+                return valor.isoformat()
+            texto = str(valor).strip()
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(texto, fmt).date().isoformat()
+                except ValueError:
+                    pass
+            raise ValueError(f"data inválida: {valor!r}")
+        return str(valor).strip()
+
+    def importar_retorno(self, planilha: Path) -> int:
+        """Lê as colunas de retorno da aba Registro e grava no SQLite. Devolve quantos protocolos mudaram.
+
+        ``PermissionError`` sobe (planilha aberta no Excel): quem chama decide.
+        """
+        from openpyxl import load_workbook
+
+        wb = load_workbook(planilha, read_only=True, data_only=True)
+        try:
+            if "Registro" not in wb.sheetnames:
+                return 0
+            linhas = list(wb["Registro"].iter_rows(values_only=True))
+        finally:
+            wb.close()
+        if not linhas:
+            return 0
+        cab = [str(c or "").strip() for c in linhas[0]]
+        if "Protocolo" not in cab:
+            return 0
+        i_prot = cab.index("Protocolo")
+        indices = {col: cab.index(tit) for col, tit in COLUNAS_RETORNO if tit in cab}
+        por_protocolo: Dict[str, Dict[str, Any]] = {}
+        for n, linha in enumerate(linhas[1:], start=2):
+            prot = str(linha[i_prot] or "").strip().upper() if i_prot < len(linha) else ""
+            if not prot:
+                continue
+            destino = por_protocolo.setdefault(prot, {})
+            for col, i in indices.items():
+                bruto = linha[i] if i < len(linha) else None
+                try:
+                    v = self._validar_retorno(col, bruto)
+                except (TypeError, ValueError) as e:
+                    log.warning("Planilha de controle, linha %d, coluna %s: %s – valor ignorado", n, dict(COLUNAS_RETORNO)[col], e)
+                    continue
+                if v is None:
+                    continue
+                if col in destino and destino[col] != v:
+                    log.warning("Retorno do protocolo %s com valores diferentes em linhas distintas (%s): vale o da "
+                                "linha %d", prot, dict(COLUNAS_RETORNO)[col], n)
+                destino[col] = v
+        return sum(1 for prot, valores in por_protocolo.items() if self.gravar_retorno(prot, valores))
+
+    # ---- bloqueio por "Tutorial errado" (v0.3.0 – T13) ------------------ #
+    def tutoriais_errados_desde(self, categoria: str, data_liberacao: str) -> List[str]:
+        """Protocolos com avaliação "Tutorial errado" em e-mails da categoria tratados a partir da data."""
+        rows = self.con.execute(
+            """SELECT DISTINCT e.protocolo FROM eventos e JOIN retorno_manual r ON r.protocolo = e.protocolo
+               WHERE r.avaliacao = 'Tutorial errado' AND e.categoria = ? AND substr(e.data_hora, 1, 10) >= ?
+               ORDER BY e.protocolo""",
+            (categoria, data_liberacao),
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    # ---- resumo da calibração ------------------------------------------- #
+    def resumo_calibracao(self) -> List[Dict[str, Any]]:
+        """Por categoria (do último evento de cada protocolo avaliado): avaliados, corretos, acerto, graves, tempo."""
+        rows = self.con.execute(
+            """SELECT e.categoria, r.avaliacao, r.tempo_manual_min FROM retorno_manual r
+               JOIN eventos e ON e.id = (SELECT MAX(x.id) FROM eventos x WHERE x.protocolo = r.protocolo)
+               WHERE COALESCE(r.avaliacao, '') <> ''"""
+        ).fetchall()
+        acerto_min, minimo = self.criterio
+        saida: Dict[str, Dict[str, Any]] = {}
+        for cat, aval, tempo in rows:
+            d = saida.setdefault(cat or "—", {"categoria": cat or "—", "avaliados": 0, "corretos": 0, "graves": 0,
+                                               "tempo": 0})
+            d["avaliados"] += 1
+            if aval == "Correto":
+                d["corretos"] += 1
+                d["tempo"] += int(tempo or 0)
+            if aval in AVALIACOES_GRAVES:
+                d["graves"] += 1
+        for d in saida.values():
+            d["acerto"] = d["corretos"] / d["avaliados"] if d["avaliados"] else 0.0
+            d["atinge"] = d["avaliados"] >= minimo and d["acerto"] >= acerto_min
+        return sorted(saida.values(), key=lambda d: d["categoria"])
+
     # ---- planilha de controle (RNF03) ----------------------------------- #
     def exportar_planilha(self, destino: Path) -> bool:
+        """Planilha de controle (RNF03) com o retorno manual (v0.3.0 – seção 6.5).
+
+        1. se a planilha existe, lê as colunas de retorno e grava no SQLite (célula vazia não apaga);
+        2. regera a planilha a partir do SQLite (eventos + retorno);
+        3. planilha aberta (``PermissionError``): pula 1 e 2, avisa no log e tenta no próximo ciclo.
+        """
         from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.styles import Alignment, Font, PatternFill, Protection
         from openpyxl.utils import get_column_letter
+        from openpyxl.worksheet.datavalidation import DataValidation
+
+        destino = Path(destino)
+        if destino.exists():
+            try:
+                n = self.importar_retorno(destino)
+                if n:
+                    log.info("Retorno manual lido da planilha de controle: %d protocolo(s) atualizado(s)", n)
+            except PermissionError:
+                log.warning("Planilha de controle em uso (aberta no Excel?): %s – será atualizada no próximo ciclo",
+                            destino)
+                return False
+            except Exception:
+                log.exception("Não foi possível ler o retorno manual de %s – planilha não regerada", destino)
+                return False
 
         wb = Workbook()
         ws = wb.active
         ws.title = "Registro"
-        ws.append([titulo for _, titulo in COLUNAS_REGISTRO])
+        colunas = COLUNAS_REGISTRO + COLUNAS_RETORNO
+        ws.append([titulo for _, titulo in colunas])
+        retornos = self.retornos()
         for row in self.eventos():
-            ws.append([row[c] for c, _ in COLUNAS_REGISTRO])
+            ret = retornos.get(row["protocolo"])
+            valores = [row[c] for c, _ in COLUNAS_REGISTRO]
+            for c, _ in COLUNAS_RETORNO:
+                v = ret[c] if ret is not None else None
+                if c == "data_revisao" and v:
+                    try:
+                        v = datetime.strptime(v, "%Y-%m-%d").date()
+                    except ValueError:
+                        pass
+                valores.append(v)
+            ws.append(valores)
         cab = PatternFill("solid", fgColor="1F3864")
-        for cel in ws[1]:
+        cab_robo = PatternFill("solid", fgColor="2E75B6")        # colunas novas do robô (v0.3.0)
+        cab_retorno = PatternFill("solid", fgColor="C65911")     # colunas que o analista preenche
+        n_antigas, n_robo = len(COLUNAS_EVENTO), len(COLUNAS_V030)
+        for i, cel in enumerate(ws[1], start=1):
             cel.font = Font(bold=True, color="FFFFFF")
-            cel.fill = cab
+            cel.fill = cab if i <= n_antigas else cab_robo if i <= n_antigas + n_robo else cab_retorno
             cel.alignment = Alignment(vertical="center", wrap_text=True)
         larguras = {"Assunto": 40, "Motivo da classificação": 50, "Erro": 40, "ID da mensagem": 30, "Destinatários": 30,
-                    "Resumo da dúvida (IA)": 50}
-        for i, (_, titulo) in enumerate(COLUNAS_REGISTRO, start=1):
+                    "Resumo da dúvida (IA)": 50, "Arquivado em": 50, "Observação": 40, "Avaliação": 20,
+                    "Categoria correta": 22, "Destinatário original": 30}
+        for i, (_, titulo) in enumerate(colunas, start=1):
             ws.column_dimensions[get_column_letter(i)].width = larguras.get(titulo, 16)
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
+
+        # validações e proteção: só as colunas de retorno ficam editáveis
+        ultima = max(ws.max_row, 2)
+        col_ret = {c: get_column_letter(len(COLUNAS_REGISTRO) + i) for i, (c, _) in enumerate(COLUNAS_RETORNO, start=1)}
+
+        def validar(dv: DataValidation, coluna: str) -> None:
+            dv.showErrorMessage = True
+            ws.add_data_validation(dv)
+            dv.add(f"{col_ret[coluna]}2:{col_ret[coluna]}{ultima}")
+
+        validar(DataValidation(type="list", formula1='"' + ",".join(AVALIACOES) + '"', allow_blank=True,
+                               errorTitle="Avaliação", error="Escolha uma avaliação da lista."), "avaliacao")
+        validar(DataValidation(type="list", formula1='"' + ",".join(CODIGOS_CATEGORIA) + '"', allow_blank=True,
+                               errorTitle="Categoria correta", error="Use um código da aba Categorias."),
+                "categoria_correta")
+        validar(DataValidation(type="whole", operator="between", formula1="0", formula2=str(TEMPO_MAXIMO_MIN),
+                               allow_blank=True, errorTitle="Tempo manual",
+                               error=f"Número inteiro de 0 a {TEMPO_MAXIMO_MIN}."), "tempo_manual_min")
+        validar(DataValidation(type="date", operator="greaterThan", formula1="36526", allow_blank=True,
+                               errorTitle="Data da revisão", error="Informe uma data."), "data_revisao")
+        livre = Protection(locked=False)
+        for coluna in col_ret.values():
+            for r in range(2, ultima + 1):
+                cel = ws[f"{coluna}{r}"]
+                cel.protection = livre
+                if coluna == col_ret["data_revisao"]:
+                    cel.number_format = "DD/MM/YYYY"
+        ws.protection.sheet = True                  # sem senha: só evita edição acidental das colunas do robô
+        ws.protection.autoFilter = False            # o filtro automático continua utilizável
+        ws.protection.sort = False
+        ws.protection.formatColumns = False
 
         wc = wb.create_sheet("Ciclos")
         colunas_ciclo = ["ciclo_id", "perfil", "modo", "inicio", "fim", "lidos", "respondidos",
@@ -356,7 +592,21 @@ class Registro:
         for cel in wr[1]:
             cel.font = Font(bold=True, color="FFFFFF")
             cel.fill = cab
-        for col in "ABCD":
+        # v0.3.0 – calibração por categoria (seção 6.5)
+        wr.append([])
+        acerto_min, minimo = self.criterio
+        wr.append(["Calibração por categoria (retorno manual)"])
+        wr.cell(row=wr.max_row, column=1).font = Font(bold=True)
+        titulos = ["Categoria", "Avaliados", "Corretos", "Acerto (%)", "Erros graves", "Tempo economizado (min)",
+                   f"Atinge o critério (≥{acerto_min:.0%} em ≥{minimo})"]
+        wr.append(titulos)
+        for cel in wr[wr.max_row]:
+            cel.font = Font(bold=True, color="FFFFFF")
+            cel.fill = cab_retorno
+        for d in self.resumo_calibracao():
+            wr.append([d["categoria"], d["avaliados"], d["corretos"], round(d["acerto"] * 100, 1), d["graves"],
+                       d["tempo"], "SIM" if d["atinge"] else "NÃO"])
+        for col in "ABCDEFG":
             wr.column_dimensions[col].width = 22
 
         destino.parent.mkdir(parents=True, exist_ok=True)

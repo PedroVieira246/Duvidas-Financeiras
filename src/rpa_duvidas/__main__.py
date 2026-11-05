@@ -36,6 +36,8 @@ def montar_dependencias(cfg: Config, caixa=None):
     """Cria todas as peças a partir da configuração (injeção simples)."""
     registro = Registro(cfg.caminho("registro.banco_estado"), cfg.perfil,
                         str(cfg.get("execucao.destino_respostas", "") or ""))
+    registro.criterio = (float(cfg.get("registro.criterio_acerto", 0.95)),
+                         int(cfg.get("registro.criterio_minimo_avaliados", 20)))
     tutoriais = RepositorioTutoriais(
         cfg.yaml_referenciado("tutoriais.arquivo"), lambda v: cfg.caminho(v, eh_valor=True)
     )
