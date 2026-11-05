@@ -47,7 +47,7 @@ COLUNAS_EVENTO = [
 COLUNAS_V030 = [
     ("escritorio", "Escritório"), ("destinatario_original", "Destinatário original"),
     ("destino_respostas", "Destino das respostas"), ("enviado", "Enviado"),
-    ("categoria_liberada", "Categoria liberada"),
+    ("categoria_liberada", "Categoria liberada"), ("arquivado_em", "Arquivado em"),
 ]
 COLUNAS_REGISTRO = COLUNAS_EVENTO + COLUNAS_V030
 # Colunas que entraram depois da v0.1.0 chegam a um banco antigo por ALTER TABLE (migrar – lacuna R7)
@@ -228,7 +228,7 @@ class Registro:
             "destino": r.destino, "status": r.status, "erro": r.erro, "duracao_ms": str(r.duracao_ms),
             "escritorio": e.escritorio, "destinatario_original": r.destinatario_original,
             "destino_respostas": self.destino_respostas, "enviado": _sn(r.enviado),
-            "categoria_liberada": _sn(r.categoria_liberada),
+            "categoria_liberada": _sn(r.categoria_liberada), "arquivado_em": r.arquivado_em,
         }
         if not c and r.motivo_ignorado:
             linha["motivo"] = r.motivo_ignorado
@@ -281,6 +281,21 @@ class Registro:
              resumo.get("encaminhados", 0), resumo.get("ignorados", 0), resumo.get("erros", 0),
              resumo.get("reconciliados", 0), obs, nao_fornecedores),
         )
+        self.con.commit()
+
+    # ---- arquivamento .msg (v0.3.0 – seção 6.4) ------------------------- #
+    def pendentes_arquivamento(self) -> List[sqlite3.Row]:
+        """Último evento de cada protocolo cujo arquivamento falhou (e que não foi refeito depois)."""
+        return self.con.execute(
+            """SELECT e.* FROM eventos e
+               WHERE e.arquivado_em LIKE 'FALHA%'
+                 AND e.id = (SELECT MAX(x.id) FROM eventos x WHERE x.protocolo = e.protocolo
+                             AND COALESCE(x.arquivado_em, '') <> '')
+               ORDER BY e.id"""
+        ).fetchall()
+
+    def atualizar_arquivamento(self, evento_id: int, valor: str) -> None:
+        self.con.execute("UPDATE eventos SET arquivado_em = ? WHERE id = ?", (valor, evento_id))
         self.con.commit()
 
     # ---- avisos únicos (v0.3.0) ------------------------------------------ #

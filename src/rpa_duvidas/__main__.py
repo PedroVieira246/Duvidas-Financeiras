@@ -263,6 +263,37 @@ def cmd_reprocessar(args) -> int:
     return 1
 
 
+def cmd_arquivar_pendentes(args) -> int:
+    """v0.3.0 – refaz o arquivamento .msg dos e-mails cuja coluna "Arquivado em" ficou com FALHA."""
+    cfg = _preparar(args.perfil)
+    if not cfg.get("arquivamento.raiz"):
+        print("Arquivamento desligado (arquivamento.raiz / caminho_arquivo_emails vazio).")
+        return 1
+    robo = montar_dependencias(cfg)
+    falhas = 0
+    try:
+        pendentes = robo.registro.pendentes_arquivamento()
+        print(f"{len(pendentes)} e-mail(s) com arquivamento pendente")
+        for ev in pendentes:
+            email = robo.caixa.localizar(ev["id_mensagem"])
+            if email is None:
+                print(f"- {ev['protocolo']}: e-mail não encontrado na caixa – continua pendente")
+                falhas += 1
+                continue
+            email.escritorio = ev["escritorio"] or email.escritorio
+            resultado = robo.arquivador.arquivar(robo.caixa, email)
+            robo.registro.atualizar_arquivamento(ev["id"], resultado)
+            ok = not resultado.startswith("FALHA")
+            falhas += 0 if ok else 1
+            print(f"- {ev['protocolo']}: {resultado}")
+        if pendentes and robo.registro.exportar_planilha(cfg.caminho("registro.planilha_controle")):
+            print(f"Planilha de controle atualizada: {cfg.caminho('registro.planilha_controle')}")
+    finally:
+        robo.registro.fechar()
+        robo.caixa.fechar()
+    return 0 if not falhas else 2
+
+
 def cmd_exportar(args) -> int:
     cfg = _preparar(args.perfil, validar=False)
     reg = Registro(cfg.caminho("registro.banco_estado"), cfg.perfil)
@@ -292,6 +323,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     r.add_argument("protocolo")
     r.set_defaults(func=cmd_reprocessar)
     com_perfil(sub.add_parser("exportar", help="regera a planilha de controle")).set_defaults(func=cmd_exportar)
+    com_perfil(sub.add_parser("arquivar-pendentes", help="refaz o arquivamento .msg que falhou")).set_defaults(
+        func=cmd_arquivar_pendentes)
 
     args = p.parse_args(argv)
     if not getattr(args, "func", None):

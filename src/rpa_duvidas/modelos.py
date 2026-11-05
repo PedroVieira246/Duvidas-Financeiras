@@ -156,3 +156,4 @@ class Resultado:
     destinatario_original: str = ""     # quem receberia no envio real (destino_respostas = TESTE)
     enviado: Optional[bool] = None      # a mensagem saiu (True) ou ficou em rascunho (False); None = sem mensagem
     categoria_liberada: Optional[bool] = None   # categoria liberada para envio na aba Categorias (D10)
+    arquivado_em: str = ""              # caminho do .msg ou "FALHA: motivo" (D05)

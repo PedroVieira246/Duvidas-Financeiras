@@ -152,6 +152,25 @@ class CaixaArquivo(CaixaEmail):
     def verificar(self) -> List[str]:
         return [] if self.entrada.exists() else [f"Pasta de entrada não existe: {self.entrada}"]
 
+    def arquivar(self, email: EmailRecebido, caminho: Path) -> None:
+        """Simulação do .msg: cópia do arquivo de origem do e-mail."""
+        self._falha(email, "arquivar")
+        arq = self._arquivos.get(email.chave)
+        if arq is None or not arq.exists():
+            raise ErroCaixa(f"E-mail não está em memória: {email.id_mensagem}")
+        shutil.copyfile(arq, caminho)
+
+    def localizar(self, id_mensagem: str) -> Optional[EmailRecebido]:
+        alvo = (id_mensagem or "").strip().lower()
+        for pasta in [self.entrada, *self.destinos.values()]:
+            for arq in sorted(pasta.glob("*.json")) if pasta.exists() else []:
+                bruto = json.loads(arq.read_text(encoding="utf-8"))
+                em = _dict_para_email(bruto, arq)
+                if em.chave == alvo:
+                    self._arquivos[em.chave], self._brutos[em.chave] = arq, bruto
+                    return em
+        return None
+
     # ------------------------------------------------------------------ #
     # saída visual
     # ------------------------------------------------------------------ #

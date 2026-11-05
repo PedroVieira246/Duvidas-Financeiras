@@ -34,6 +34,7 @@ from . import extracao
 from .caixa.base import CaixaEmail
 from .classificacao.base import Classificador
 from .config import Config
+from .arquivamento import Arquivador
 from .filtros import ErroEscritorios, FiltroInterno, FiltroSpam, ListaFornecedores, MapaEscritorios
 from .modelos import (VERBOS_JA_TRATADO, Acao, Categoria, Classificacao, Destino, EmailRecebido, MotivoIgnorado,
                       MotivoManual, Resultado, Status)
@@ -103,6 +104,8 @@ class Robo:
         self.categorias: Dict[str, Dict] = dict(cfg.get("categorias", {}) or {})
         self.bloqueadas: Dict[str, str] = {}        # categoria → protocolo do "Tutorial errado" (T13)
         self.acao_manual = cfg.acao_manual
+        # v0.3.0 – arquivamento .msg (D05). Vazio = desligado (v0.2.1)
+        self.arquivador = Arquivador(cfg.caminho("arquivamento.raiz")) if cfg.get("arquivamento.raiz") else None
         self.permitidos = list(cfg.get("seguranca.destinatarios_permitidos", []) or [])
         self.cats = cfg.get("caixa.categorias_outlook", {}) or {}
         self.mover = bool(cfg.get("caixa.mover_apos_tratar", True))
@@ -147,6 +150,11 @@ class Robo:
         situacao = "desativada" if not conf.get("ativa", True) else "configurada como MANUAL"
         c.motivo = f"categoria {c.categoria} {situacao} na planilha | {c.motivo}"
         c.categoria, c.motivo_manual = Categoria.MANUAL, MotivoManual.CATEGORIA_DESABILITADA
+
+    def _arquivar(self, email: EmailRecebido, r: Resultado) -> None:
+        """Depois da ação executada e antes do finalizar (seção 6.4). Falha não interrompe o tratamento."""
+        if self.arquivador is not None:
+            r.arquivado_em = self.arquivador.arquivar(self.caixa, email)
 
     def eh_fornecedor(self, remetente: str) -> bool:
         """Remetente que o robô pode tratar: não interno e (se exigido) na lista de fornecedores."""
@@ -277,6 +285,7 @@ class Robo:
             r.acao, r.destino = Acao.IGNORAR, Destino.IGNORADOS
             r.motivo_ignorado = f"{MotivoIgnorado.JA_TRATADO_PELO_ANALISTA}: última ação no Outlook = {email.ultimo_verbo}"
             self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
+            self._arquivar(email, r)
             self.caixa.finalizar(email, Destino.IGNORADOS, self.cats.get("ignorado"), marcar_lido=False)
             r.status = Status.IGNORADO
             return
@@ -437,6 +446,7 @@ class Robo:
         )
         r.enviado = enviar
         self.registro.marcar_acao_executada(email.chave)
+        self._arquivar(email, r)
         self._finalizar_ok(email, Destino.RESPONDIDOS, "respondido", r, enviar)
 
     def _responder_tutorial(self, email: EmailRecebido, c: Classificacao, r: Resultado) -> None:
@@ -489,6 +499,7 @@ class Robo:
             r.enviado = False
             self.registro.marcar_em_andamento(email.chave, protocolo(email), r.acao)
             self.registro.marcar_acao_executada(email.chave)
+            self._arquivar(email, r)
             r.destino = Destino.ENCAMINHADOS
             self.caixa.finalizar(email, Destino.ENCAMINHADOS, self.cats.get("encaminhado"))
             r.status = Status.CONCLUIDO
@@ -507,6 +518,7 @@ class Robo:
         r.id_mensagem_gerada = self.caixa.encaminhar(email, para, prefixo, nota, enviar=enviar)
         r.enviado = enviar
         self.registro.marcar_acao_executada(email.chave)
+        self._arquivar(email, r)
         self._finalizar_ok(email, Destino.ENCAMINHADOS, "encaminhado", r, enviar)
 
     # ---- erro (RNF02) ---------------------------------------------------- #

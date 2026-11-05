@@ -42,6 +42,7 @@ OL_FOLDER_INBOX = 6
 OL_ACCOUNT_EAS = 4        # OlAccountType.olEas (Exchange ActiveSync)
 OL_MAIL_ITEM = 0          # CreateItem
 OL_DISCARD = 1            # MailItem.Close(olDiscard)
+OL_MSG = 3                # MailItem.SaveAs(caminho, olMSG)
 CLASSE_MAIL = 43
 CLASSE_REPORT = 46
 
@@ -475,6 +476,27 @@ class CaixaOutlookCOM(CaixaEmail):
         if pasta is not None:
             item.Move(pasta)
         self._itens.pop(email.chave, None)
+
+    def arquivar(self, email: EmailRecebido, caminho: Path) -> None:
+        self._item(email).SaveAs(str(caminho), OL_MSG)
+
+    def localizar(self, id_mensagem: str) -> Optional[EmailRecebido]:
+        alvo = (id_mensagem or "").strip().lower()
+        pastas = [self.pasta_entrada]
+        if self.mover:
+            for chave in self._caminhos_destino:
+                try:
+                    pastas.append(self._destino(chave))
+                except ErroCaixa:
+                    pass
+        for pasta in pastas:
+            for item in _iterar(pasta.Items):
+                ident = (_prop_mapi(item, PR_INTERNET_MESSAGE_ID) or str(_prop(item, "EntryID", ""))).strip().lower()
+                if ident == alvo:
+                    em = self._converter(item)
+                    self._itens[em.chave] = item
+                    return em
+        return None
 
     def _garantir_categoria(self, nome: str) -> None:
         try:

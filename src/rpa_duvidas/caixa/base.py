@@ -116,6 +116,14 @@ class CaixaEmail(ABC):
         encaminhados, erro, ignorados).
         """
 
+    def arquivar(self, email: EmailRecebido, caminho: Path) -> None:
+        """v0.3.0 – salva o e-mail ORIGINAL em ``caminho`` (.msg, com anexos – seção 6.4)."""
+        raise ErroCaixa("arquivamento em .msg não suportado por esta caixa")
+
+    def localizar(self, id_mensagem: str) -> Optional[EmailRecebido]:
+        """v0.3.0 – reencontra um e-mail já tratado (comando ``arquivar-pendentes``)."""
+        return None
+
     def destinatarios_resposta(self, email: EmailRecebido, responder_todos: bool) -> List[str]:
         """Endereços que receberão a resposta (usado pela trava de segurança)."""
         return [email.remetente]
