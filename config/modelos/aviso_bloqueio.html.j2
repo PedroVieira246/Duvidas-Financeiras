@@ -1,0 +1,10 @@
+{#- v0.3.0 – bloqueio automático de uma categoria liberada (seção 6.7). Sai uma vez por categoria e data de liberação. -#}
+<div style="font-family:Segoe UI,Arial,sans-serif;font-size:10pt;color:#1e293b">
+{%- if faixa_ambiente %}<p style="color:#92400e;font-weight:600">{{ faixa_ambiente }}</p>{% endif %}
+<p><b>O RPA Dúvidas Financeiras bloqueou o envio da categoria {{ categoria }}.</b></p>
+<p>Houve avaliação <b>Tutorial errado</b> em e-mail tratado depois da liberação de {{ data_liberacao }}
+(protocolo(s): {{ protocolos }}). A partir de agora, essa categoria gera só rascunhos.</p>
+<p>Para liberar de novo: corrija a causa e, na aba Categorias do configuracao.xlsx, apague e preencha de novo a
+"Data da liberação" com a data da nova liberação.</p>
+<p style="color:#64748b;font-size:9pt">{{ data }}</p>
+</div>

@@ -160,6 +160,11 @@ class GeradorRespostas:
         """Aviso único aos analistas quando a IA é desligada no ciclo (RNF-IA03)."""
         return self._render("aviso_ia_indisponivel.html.j2", falhas=falhas)
 
+    def aviso_bloqueio(self, categoria: str, protocolos, data_liberacao: str) -> str:
+        """v0.3.0 – bloqueio automático por "Tutorial errado" (seção 6.7)."""
+        return self._render("aviso_bloqueio.html.j2", categoria=categoria, protocolos=", ".join(protocolos),
+                            data_liberacao=data_liberacao)
+
     def aviso_falha_ciclo(self, mensagem: str) -> str:
         """v0.3.0 – o ciclo não rodou (ex.: planilha de escritórios indisponível – seção 5.9)."""
         return self._render("aviso_falha_ciclo.html.j2", mensagem=mensagem)

@@ -136,6 +136,41 @@ class Robo:
             return True                                  # sem aba Categorias: comportamento da v0.2.1
         return bool((self.categorias.get(codigo) or {}).get("liberada", False))
 
+    def atualizar_bloqueios(self) -> None:
+        """Bloqueio automático (seção 6.7): "Tutorial errado" em e-mail tratado a partir da Data da liberação
+        de uma categoria liberada → só rascunhos para ela, log e aviso a AVISO_ERRO (uma vez por categoria e data).
+        A liberação volta quando o analista preenche uma data nova na aba Categorias."""
+        self.bloqueadas = {}
+        for codigo, conf in self.categorias.items():
+            data = str((conf or {}).get("data_liberacao") or "")
+            if not (conf or {}).get("liberada") or not data:
+                continue
+            try:
+                protocolos = self.registro.tutoriais_errados_desde(codigo, data)
+            except Exception:
+                log.exception("Não foi possível consultar o retorno manual da categoria %s", codigo)
+                continue
+            if not protocolos:
+                continue
+            self.bloqueadas[codigo] = protocolos[0]
+            log.warning("Categoria %s BLOQUEADA para envio: 'Tutorial errado' depois da liberação de %s (protocolo(s) %s)"
+                        " – só rascunhos até nova liberação", codigo, data, ", ".join(protocolos))
+            self._avisar_bloqueio(codigo, protocolos, data)
+
+    def _avisar_bloqueio(self, codigo: str, protocolos: List[str], data: str) -> None:
+        chave = f"bloqueio:{codigo}:{data}"
+        para = list(self.cfg.get("destinatarios.avisos_erro", []) or [])
+        if not para or self.registro.ja_avisado(chave):
+            return
+        try:
+            self._verificar_destinatarios(para)
+            corpo = self.respostas.aviso_bloqueio(codigo, protocolos, data)
+            self.caixa.enviar_novo(para, f"[RPA Dúvidas Financeiras] Categoria {codigo} bloqueada para envio", corpo,
+                                   enviar=self.envio_real)
+            self.registro.registrar_aviso(chave)
+        except Exception:
+            log.exception("Falha ao enviar o aviso de bloqueio da categoria %s", codigo)
+
     def _deve_enviar(self, codigo: str, r: Resultado) -> bool:
         """Envia só com modo REAL + categoria liberada + categoria não bloqueada (a trava vem depois)."""
         r.categoria_liberada = self.categoria_liberada(codigo) and codigo not in self.bloqueadas
@@ -191,6 +226,7 @@ class Robo:
             self.registro.gravar_ciclo(resumo.ciclo_id, self.modo, resumo.inicio, resumo.contagem(),
                                        obs=f"NÃO EXECUTADO: {erro}"[:500])
             return resumo
+        self.atualizar_bloqueios()
         if hasattr(self.classificador, "iniciar_ciclo"):
             self.classificador.iniciar_ciclo()          # zera o contador de falhas da IA (RNF-IA03)
         emails = self.ler_pendentes(lote)
