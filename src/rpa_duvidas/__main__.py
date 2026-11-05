@@ -15,6 +15,7 @@ import argparse
 import logging
 import sys
 import time
+from pathlib import Path
 from typing import List, Optional
 
 from . import __version__
@@ -22,7 +23,7 @@ from .caixa import criar_caixa
 from .caixa.base import ErroCaixa
 from .ciclo import Robo
 from .classificacao import criar_classificador
-from .config import Config, ErroConfiguracao, carregar
+from .config import Config, ErroConfiguracao, carregar, expandir
 from .filtros import ListaFornecedores
 from .registro import ExecucaoEmAndamento, Registro, configurar_log, trava
 from .respostas import GeradorRespostas
@@ -44,6 +45,7 @@ def montar_dependencias(cfg: Config, caixa=None):
             "faixa_ambiente": cfg.get("respostas.faixa_ambiente", ""),
             "link_forms": cfg.get("respostas.link_forms_po", ""),
         },
+        pastas_personalizadas=_pastas_modelos_personalizados(cfg),
     )
     fornecedores = ListaFornecedores(cfg.yaml_referenciado("filtros.arquivo_fornecedores"))
     robo = Robo(
@@ -56,6 +58,15 @@ def montar_dependencias(cfg: Config, caixa=None):
         fornecedores=fornecedores,
     )
     return robo
+
+
+def _pastas_modelos_personalizados(cfg: Config):
+    """``modelos\\`` ao lado do .exe: um .j2 ali substitui o padrão (seção 4.4)."""
+    nome = cfg.get("respostas.pasta_modelos_personalizados", "")
+    if not nome:
+        return []
+    p = Path(expandir(str(nome)))
+    return [p if p.is_absolute() else cfg.raiz / p]
 
 
 def _preparar(perfil: Optional[str], validar: bool = True) -> Config:

@@ -10,12 +10,36 @@ from __future__ import annotations
 import copy
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import yaml
 
-RAIZ_PROJETO = Path(__file__).resolve().parents[2]
+
+
+def raiz_aplicacao() -> Path:
+    """Pasta da aplicação: a do .exe (PyInstaller) ou a raiz do projeto (seção 4.4).
+
+    Fica aqui o que a instalação edita ou gera: ``config\\configuracao.xlsx``,
+    ``modelos\\`` (substitui o .j2 padrão), ``dados\\``, ``logs\\`` e ``arquivo\\``.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
+def raiz_recursos() -> Path:
+    """Arquivos empacotados no .exe (``settings.yaml``, perfis, modelos .j2 padrão, prompts)."""
+    return Path(getattr(sys, "_MEIPASS", raiz_aplicacao()))
+
+
+def perfil_padrao() -> str:
+    """``RPA_PERFIL`` ou, sem ela, ``calibracao`` no executável e ``dev`` no código-fonte."""
+    return os.environ.get("RPA_PERFIL") or ("calibracao" if getattr(sys, "frozen", False) else "dev")
+
+
+RAIZ_PROJETO = raiz_aplicacao()
 MARCADOR_PENDENTE = "<PREENCHER"
 MARCADORES_PENDENTE = (MARCADOR_PENDENTE, "A_PREENCHER")
 DESTINOS_RESPOSTA = ("FORNECEDOR", "TESTE")
@@ -86,10 +110,12 @@ class Config:
     ``cfg.get("caixa.pastas_destino.erro")`` lê com notação de pontos.
     """
 
-    def __init__(self, dados: Dict[str, Any], perfil: str, raiz: Path = RAIZ_PROJETO):
+    def __init__(self, dados: Dict[str, Any], perfil: str, raiz: Path = RAIZ_PROJETO,
+                 recursos: Optional[Path] = None):
         self.dados = dados
         self.perfil = perfil
         self.raiz = raiz
+        self.recursos = recursos or raiz
         self._cache_yaml: Dict[str, Dict[str, Any]] = {}
         self.erros_xlsx: List[Any] = []     # ErroCelula da planilha de configuração (v0.3.0)
 
@@ -109,10 +135,20 @@ class Config:
         return valor
 
     def caminho(self, chave_ou_valor: str, *, eh_valor: bool = False) -> Path:
-        """Resolve um caminho da configuração (relativo à raiz do projeto)."""
+        """Resolve um caminho da configuração (relativo à raiz da aplicação).
+
+        v0.3.0: se o caminho relativo não existe na pasta da aplicação mas existe
+        entre os recursos empacotados no .exe (ex.: ``config/modelos``), vale o
+        recurso. Fora do executável as duas raízes são a mesma pasta.
+        """
         bruto = chave_ou_valor if eh_valor else self.exigir(chave_ou_valor)
-        p = Path(expandir(str(bruto)))
-        return p if p.is_absolute() else (self.raiz / p)
+        p = Path(expandir(str(bruto)).replace("\\", "/")) if os.sep == "/" else Path(expandir(str(bruto)))
+        if p.is_absolute():
+            return p
+        na_aplicacao = self.raiz / p
+        if self.recursos != self.raiz and not na_aplicacao.exists() and (self.recursos / p).exists():
+            return self.recursos / p
+        return na_aplicacao
 
     def yaml_referenciado(self, chave: str) -> Dict[str, Any]:
         """Carrega (com cache) um YAML cujo caminho está em ``chave``.
@@ -295,8 +331,9 @@ def _derivar(dados: Dict[str, Any]) -> Dict[str, Any]:
 
 def carregar(
     perfil: Optional[str] = None,
-    raiz: Path = RAIZ_PROJETO,
+    raiz: Optional[Path] = None,
     *,
+    recursos: Optional[Path] = None,
     usar_xlsx: bool = True,
     arquivo_xlsx: Optional[Path] = None,
 ) -> Config:
@@ -307,11 +344,15 @@ def carregar(
     erro; erros de célula ficam em ``Config.erros_xlsx`` e entram no ``validar()``.
     ``usar_xlsx=False`` ignora a planilha (usado pelo gerador do modelo).
     """
-    perfil = perfil or os.environ.get("RPA_PERFIL") or "dev"
-    base = ler_yaml(raiz / "config" / "settings.yaml")
-    arq_perfil = raiz / "config" / "perfis" / f"{perfil}.yaml"
+    if raiz is None:
+        raiz, recursos = raiz_aplicacao(), recursos or raiz_recursos()
+    raiz = Path(raiz)
+    recursos = Path(recursos) if recursos is not None else raiz
+    perfil = perfil or perfil_padrao()
+    base = ler_yaml(recursos / "config" / "settings.yaml")
+    arq_perfil = recursos / "config" / "perfis" / f"{perfil}.yaml"
     if not arq_perfil.exists():
-        disponiveis = sorted(p.stem for p in (raiz / "config" / "perfis").glob("*.yaml"))
+        disponiveis = sorted(p.stem for p in (recursos / "config" / "perfis").glob("*.yaml"))
         raise ErroConfiguracao(f"Perfil '{perfil}' não existe. Disponíveis: {', '.join(disponiveis)}")
     dados = mesclar(base, ler_yaml(arq_perfil))
     erros_xlsx: List[Any] = []
@@ -333,6 +374,6 @@ def carregar(
         except Exception as e:
             raise ErroConfiguracao(f"Não foi possível ler a planilha de configuração {caminho}: {e}") from e
         dados = mesclar(dados, parcial)
-    cfg = Config(_derivar(dados), perfil, raiz)
+    cfg = Config(_derivar(dados), perfil, raiz, recursos)
     cfg.erros_xlsx = list(erros_xlsx)
     return cfg

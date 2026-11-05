@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateNotFound, select_autoescape
 
@@ -25,10 +25,14 @@ def protocolo(email: EmailRecebido) -> str:
 
 
 class GeradorRespostas:
-    def __init__(self, pasta_modelos: Path, contexto_fixo: Dict[str, Any]):
+    def __init__(self, pasta_modelos: Path, contexto_fixo: Dict[str, Any],
+                 pastas_personalizadas: Sequence[Path] = ()):
+        """``pastas_personalizadas`` (v0.3.0): pastas consultadas ANTES da padrão; um
+        .j2 com o mesmo nome substitui o modelo empacotado, arquivo a arquivo."""
         self.pasta = Path(pasta_modelos)
+        self.pastas = [Path(p) for p in pastas_personalizadas if Path(p).is_dir()] + [self.pasta]
         self.env = Environment(
-            loader=FileSystemLoader(str(self.pasta)),
+            loader=FileSystemLoader([str(p) for p in self.pastas]),
             autoescape=select_autoescape(["html", "j2"]),
             undefined=StrictUndefined,      # variável faltando = erro, não texto vazio
             trim_blocks=True,
@@ -45,7 +49,7 @@ class GeradorRespostas:
         return modelo.render(**dados)
 
     def existe(self, categoria: str) -> bool:
-        return (self.pasta / f"{categoria}.html.j2").exists()
+        return any((p / f"{categoria}.html.j2").exists() for p in self.pastas)
 
     # ------------------------------------------------------------------ #
     def resposta(self, email: EmailRecebido, categoria: str, *, nome_arquivo: str = "", descricao_tutorial: str = "") -> str:
