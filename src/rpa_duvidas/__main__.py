@@ -1,10 +1,15 @@
 """Linha de comando do robô.
 
-    python -m rpa_duvidas executar   [--perfil dev|demo|prod] [--loop]
+    python -m rpa_duvidas executar   [--perfil dev|demo|prod|calibracao] [--loop]
     python -m rpa_duvidas verificar  [--perfil ...]
     python -m rpa_duvidas previa     [--perfil ...] [--detalhe]
     python -m rpa_duvidas reprocessar <PROTOCOLO> [--perfil ...]
     python -m rpa_duvidas exportar   [--perfil ...]
+    python -m rpa_duvidas arquivar-pendentes [--perfil ...]     (v0.3.0)
+    python -m rpa_duvidas menu       [--perfil ...]             (v0.3.0)
+
+No executável (RPA_DuvidasFinanceiras.exe), o perfil padrão é ``calibracao`` e o
+duplo clique, sem argumentos, abre o menu do console.
 
 Códigos de saída: 0 ok · 1 erro de configuração/caixa · 2 houve e-mails em
 erro no ciclo · 3 outro ciclo já em andamento.
@@ -13,8 +18,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -126,82 +133,137 @@ def cmd_executar(args) -> int:
 
 
 def cmd_verificar(args) -> int:
+    from . import verificacao as V
+
     cfg = _preparar(args.perfil, validar=False)
-    problemas: List[str] = list(cfg.validar())
-    print(f"\nPerfil: {cfg.perfil} | ambiente: {cfg.ambiente} | caixa: {cfg.get('caixa.tipo')} | "
-          f"envio real: {'SIM' if cfg.envio_real else 'não (simulação)'}")
+    linhas: List[str] = []
 
-    print("\n[Tutoriais]")
-    try:
-        repo = RepositorioTutoriais(cfg.yaml_referenciado("tutoriais.arquivo"), lambda v: cfg.caminho(v, eh_valor=True))
-        for cat, ok, det in repo.verificar_todos():
-            print(f"  {'OK ' if ok else 'ERRO'} {cat:<14} {det}")
-            if not ok:
-                problemas.append(f"Tutorial {cat}: {det}")
-    except ErroConfiguracao as e:
-        problemas.append(str(e))
+    def p(texto: str = "") -> None:
+        print(texto)
+        linhas.append(texto)
 
-    print("\n[Modelos de resposta]")
+    problemas: List[str] = [e for e in cfg.validar() if not cfg.erros_xlsx or e not in {str(x) for x in cfg.erros_xlsx}]
+    p(f"\nRPA Dúvidas Financeiras v{__version__} | {datetime.now():%d/%m/%Y %H:%M}")
+    p(f"Perfil: {cfg.perfil} | ambiente: {cfg.ambiente} | caixa: {cfg.get('caixa.tipo')} | "
+      f"envio real: {'SIM' if cfg.envio_real else 'não (simulação)'}")
+
+    def secao(titulo: str, itens) -> None:
+        if not itens:
+            return
+        p(f"\n[{titulo}]")
+        for item in itens:
+            p(str(item))
+            if item.nivel == V.ERRO:
+                problemas.append(item.mensagem)
+
+    secao("Planilha de configuração", V.planilha_configuracao(cfg))
+    secao("Outlook e destino das respostas", V.outlook(cfg))
+
+    if cfg.usa_xlsx:
+        secao("Tutoriais", V.tutoriais(cfg))
+        secao("Formulário de PO", V.formulario(cfg))
+    else:
+        p("\n[Tutoriais]")
+        try:
+            repo = RepositorioTutoriais(cfg.yaml_referenciado("tutoriais.arquivo"), lambda v: cfg.caminho(v, eh_valor=True))
+            for cat, ok, det in repo.verificar_todos():
+                p(f"  {'OK ' if ok else 'ERRO'} {cat:<14} {det}")
+                if not ok:
+                    problemas.append(f"Tutorial {cat}: {det}")
+        except ErroConfiguracao as e:
+            problemas.append(str(e))
+
+    p("\n[Modelos de resposta]")
     pasta = cfg.caminho("respostas.pasta_modelos")
     for nome in ["TUT_CONNECT", "TUT_UPLOAD_NF", "TUT_REEMBOLSO", "TUT_CADASTRO", "FORMS_PO",
                  "encaminhamento_manual", "aviso_erro"]:
         ok = (pasta / f"{nome}.html.j2").exists()
-        print(f"  {'OK ' if ok else 'ERRO'} {nome}")
+        p(f"  {'OK ' if ok else 'ERRO'} {nome}")
         if not ok:
             problemas.append(f"Modelo ausente: {nome}.html.j2")
 
-    print("\n[Classificação]")
+    p("\n[Classificação]")
     tipo = cfg.classificador
-    print(f"  tipo: {tipo} | limite de confiança efetivo: {cfg.limite_confianca:.2f}")
-    from .classificacao.ia import verificar_ia
-
-    try:
-        tutoriais_cfg = list((cfg.yaml_referenciado("tutoriais.arquivo").get("categorias") or {}).keys())
-    except ErroConfiguracao:
-        tutoriais_cfg = []
-    modelos = [p.name[: -len(".html.j2")] for p in pasta.glob("*.html.j2")]
-    problemas_ia = verificar_ia(cfg, modelos, tutoriais_cfg)
-    if tipo == "ia":
-        print(f"  provedor: {cfg.get('classificacao.ia.provedor.tipo', 'simulado')} | prompt: "
-              f"{cfg.get('classificacao.ia.arquivo_prompt')} | categorias: {cfg.get('classificacao.ia.arquivo_categorias')}")
-        if not (pasta / "aviso_ia_indisponivel.html.j2").exists():
-            problemas_ia.append("Modelo ausente: aviso_ia_indisponivel.html.j2")
-        for prob in problemas_ia:
-            print(f"  ERRO {prob}")
-        if not problemas_ia:
-            print("  OK  prompt, categorias_ia.yaml, mapeamento categoria → tutorial e provedor")
-        problemas += problemas_ia
+    p(f"  tipo: {tipo} | limite de confiança efetivo: {cfg.limite_confianca:.2f}")
+    if cfg.usa_xlsx:
+        p("  IA: desligada nesta etapa")                    # D04: nada da IA é consultado no perfil calibracao
     else:
-        situacao = "OK " if not problemas_ia else "AVISO"
-        print(f"  {situacao} configuração da IA (desligada; só informativo){': ' + '; '.join(problemas_ia) if problemas_ia else ''}")
+        from .classificacao.ia import verificar_ia
 
-    print("\n[Filtros]")
+        try:
+            tutoriais_cfg = list((cfg.yaml_referenciado("tutoriais.arquivo").get("categorias") or {}).keys())
+        except ErroConfiguracao:
+            tutoriais_cfg = []
+        modelos = [m.name[: -len(".html.j2")] for m in pasta.glob("*.html.j2")]
+        problemas_ia = verificar_ia(cfg, modelos, tutoriais_cfg)
+        if tipo == "ia":
+            p(f"  provedor: {cfg.get('classificacao.ia.provedor.tipo', 'simulado')} | prompt: "
+              f"{cfg.get('classificacao.ia.arquivo_prompt')} | categorias: {cfg.get('classificacao.ia.arquivo_categorias')}")
+            if not (pasta / "aviso_ia_indisponivel.html.j2").exists():
+                problemas_ia.append("Modelo ausente: aviso_ia_indisponivel.html.j2")
+            for prob in problemas_ia:
+                p(f"  ERRO {prob}")
+            if not problemas_ia:
+                p("  OK  prompt, categorias_ia.yaml, mapeamento categoria → tutorial e provedor")
+            problemas += problemas_ia
+        else:
+            situacao = "OK " if not problemas_ia else "AVISO"
+            p(f"  {situacao} configuração da IA (desligada; só informativo){': ' + '; '.join(problemas_ia) if problemas_ia else ''}")
+    secao("Categorias", V.categorias(cfg))
+
+    p("\n[Filtros]")
     try:
         n_forn = len(ListaFornecedores(cfg.yaml_referenciado("filtros.arquivo_fornecedores")))
     except ErroConfiguracao:
         n_forn = 0
-    print(f"  fornecedores na lista: {n_forn} | domínios internos: {len(cfg.get('filtros.dominios_internos', []) or [])} | "
+    if cfg.get("escritorios.arquivo"):
+        p(f"  domínios internos: {len(cfg.get('filtros.dominios_internos', []) or [])} | "
+          f"não fornecedores: {'marcados' if cfg.get('caixa.marcar_nao_fornecedores', True) else 'não alterados'} | "
+          f"pular já respondidos: {'sim' if cfg.get('caixa.pular_ja_respondidos', False) else 'não'}")
+    else:
+        p(f"  fornecedores na lista: {n_forn} | domínios internos: {len(cfg.get('filtros.dominios_internos', []) or [])} | "
           f"spam (SCL): {'ligado' if cfg.get('filtros.spam.ativo', False) else 'desligado'}")
     if cfg.ambiente == "prod" and cfg.get("filtros.validar_fornecedor", True) and n_forn == 0:
         alerta = ("ALERTA: lista de fornecedores VAZIA em prod – todos os e-mails irão para "
                   "[MANUAL – FORA DA LISTA] (solicitação S06 / lacuna R8)")
-        print(f"  {alerta}")
+        p(f"  {alerta}")
         problemas.append(alerta)
+    secao("Planilha de escritórios", V.escritorios(cfg))
+    secao("Arquivamento .msg", V.arquivamento(cfg))
 
-    print("\n[Caixa de e-mail]")
+    p("\n[Caixa de e-mail]")
     try:
         caixa = criar_caixa(cfg)
         for aviso in getattr(caixa, "avisos", lambda: [])():
-            print(f"  INFO {aviso}")
+            p(f"  INFO {aviso}")
+        for item in V.tipo_conta(cfg, caixa):
+            p(str(item))
         extras = caixa.verificar()
-        print("  OK  conexão" if not extras else "  ERRO " + "; ".join(extras))
+        p("  OK  conexão" + (f" | conta: {cfg.get('caixa.conta')}" if cfg.get("caixa.conta") else "")
+          if not extras else "  ERRO " + "; ".join(extras))
         problemas += extras
     except (ErroCaixa, ErroConfiguracao) as e:
-        print(f"  ERRO {e}")
+        p(f"  ERRO {e}")
         problemas.append(str(e))
 
-    print("\n" + ("Tudo certo para executar." if not problemas else "Pendências:\n  - " + "\n  - ".join(problemas)))
+    if cfg.erros_xlsx:
+        problemas = [str(e) for e in cfg.erros_xlsx] + problemas
+    problemas = list(dict.fromkeys(problemas))
+    p("\n" + ("Tudo certo para executar." if not problemas else "Pendências:\n  - " + "\n  - ".join(problemas)))
+    _salvar_evidencia(cfg, linhas)
     return 0 if not problemas else 1
+
+
+def _salvar_evidencia(cfg: Config, linhas: List[str]) -> None:
+    """Saída do verificar em logs\\verificar_AAAA-MM-DD_HHMM.txt – evidência da instalação (seção 7.2)."""
+    try:
+        pasta = cfg.caminho("registro.pasta_logs")
+        pasta.mkdir(parents=True, exist_ok=True)
+        arq = pasta / f"verificar_{datetime.now():%Y-%m-%d_%H%M}.txt"
+        arq.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+        print(f"\nResultado salvo em {arq}")
+    except OSError as e:
+        log.warning("Não foi possível salvar o resultado do verificar: %s", e)
 
 
 def cmd_previa(args) -> int:
@@ -305,13 +367,90 @@ def cmd_exportar(args) -> int:
     return 0 if ok else 1
 
 
+MENU = """
+RPA Dúvidas Financeiras v{versao} – {conta}
+1) Verificar configuração
+2) Prévia (não altera nada)
+3) Executar um ciclo
+4) Executar continuamente (a cada {intervalo} min)
+5) Abrir planilha de controle
+0) Sair
+"""
+
+
+def _abrir_arquivo(caminho: Path) -> None:
+    abrir = getattr(os, "startfile", None)
+    if abrir is None:
+        print(f"Planilha de controle: {caminho}")
+        return
+    abrir(str(caminho))  # pragma: no cover - só no Windows
+
+
+def cmd_menu(args, entrada=input) -> int:
+    """Menu do console aberto pelo duplo clique no .exe (seção 7.2)."""
+    perfil = getattr(args, "perfil", None)
+    while True:
+        conta, intervalo, planilha = "", 15, None
+        try:
+            cfg = carregar(perfil)
+            conta = str(cfg.get("caixa.conta", "") or "conta padrão do Outlook")
+            intervalo = int(cfg.get("execucao.intervalo_minutos", 15) or 15)
+            planilha = cfg.caminho("registro.planilha_controle")
+        except ErroConfiguracao as e:
+            conta = f"configuração com erro – {e}"
+        print(MENU.format(versao=__version__, conta=conta, intervalo=intervalo))
+        try:
+            opcao = entrada("Escolha uma opção: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return 0
+        ns = argparse.Namespace(perfil=perfil, loop=False, detalhe=False)
+        try:
+            if opcao == "0":
+                return 0
+            if opcao == "1":
+                cmd_verificar(ns)
+            elif opcao == "2":
+                cmd_previa(ns)
+            elif opcao == "3":
+                cmd_executar(ns)
+            elif opcao == "4":
+                ns.loop = True
+                cmd_executar(ns)
+            elif opcao == "5":
+                if planilha is not None and planilha.exists():
+                    _abrir_arquivo(planilha)
+                else:
+                    print(f"Planilha de controle ainda não existe: {planilha} (rode um ciclo primeiro)")
+            else:
+                print("Opção inválida.")
+                continue
+        except (ErroConfiguracao, ErroCaixa, ErroEscritorios) as erro:
+            print(f"\nERRO: {erro}")
+        except KeyboardInterrupt:
+            print("\nInterrompido.")
+        try:
+            entrada("\nPressione Enter para voltar ao menu...")
+        except (EOFError, KeyboardInterrupt):
+            return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv and getattr(sys, "frozen", False):        # duplo clique no .exe
+        try:
+            return cmd_menu(argparse.Namespace(perfil=None))
+        except Exception as erro:  # pragma: no cover - não fechar o console sem mostrar o erro
+            print(f"\nERRO: {erro}")
+            input("\nPressione Enter para sair...")
+            return 1
     p = argparse.ArgumentParser(prog="rpa_duvidas", description="RPA Dúvidas Financeiras – Frente 1")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="comando")
 
     def com_perfil(sp):
-        sp.add_argument("--perfil", help="dev | demo | prod (padrão: variável RPA_PERFIL ou dev)")
+        sp.add_argument("--perfil", help="dev | demo | prod | calibracao (padrão: variável RPA_PERFIL; "
+                                         "calibracao no executável, dev no código-fonte)")
         return sp
 
     e = com_perfil(sub.add_parser("executar", help="executa um ciclo (ou vários com --loop)"))
@@ -327,6 +466,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     com_perfil(sub.add_parser("exportar", help="regera a planilha de controle")).set_defaults(func=cmd_exportar)
     com_perfil(sub.add_parser("arquivar-pendentes", help="refaz o arquivamento .msg que falhou")).set_defaults(
         func=cmd_arquivar_pendentes)
+    com_perfil(sub.add_parser("menu", help="menu do console (o mesmo do duplo clique no .exe)")).set_defaults(
+        func=cmd_menu)
 
     args = p.parse_args(argv)
     if not getattr(args, "func", None):
