@@ -62,7 +62,12 @@ set "PACOTE=dist\RPA_DuvidasFinanceiras"
 set "ZIP=dist\RPA_DuvidasFinanceiras_v%VERSAO%.zip"
 
 echo [1/5] Testes automatizados
-"%PY%" -m pytest -q -p no:cacheprovider
+REM v0.3.2: pasta temporaria propria dos testes. Sem isso o pytest tenta limpar
+REM %TEMP%\pytest-of-<usuario>\pytest-current e o Windows pode negar acesso
+REM (WinError 5), cancelando o build mesmo com todos os testes passando.
+set "PYTEST_TMP=%TEMP%\rpa_duvidas_pytest"
+if exist "%PYTEST_TMP%" rmdir /s /q "%PYTEST_TMP%" >nul 2>&1
+"%PY%" -m pytest -q -p no:cacheprovider --basetemp="%PYTEST_TMP%"
 if errorlevel 1 (
   echo ERRO: testes falharam - build cancelado.
   goto :fim
