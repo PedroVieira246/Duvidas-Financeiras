@@ -90,17 +90,17 @@ def tipo_conta(cfg: Config, caixa: Any) -> List[Item]:
 def escritorios(cfg: Config) -> List[Item]:
     if not cfg.get("escritorios.arquivo"):
         return []
-    from .filtros import ErroEscritorios, ler_planilha_escritorios
+    from .filtros import ErroEscritorios, ler_planilha_escritorios, valores_sem_escritorio
 
     try:
         mapa = ler_planilha_escritorios(
             cfg.caminho("escritorios.arquivo"), str(cfg.get("escritorios.aba", "") or ""),
             str(cfg.get("escritorios.coluna_dominio", "Domínio")), str(cfg.get("escritorios.coluna_escritorio", "Escritório")),
+            valores_sem_escritorio=valores_sem_escritorio(cfg),
         )
     except ErroEscritorios as e:
         return [Item(ERRO, str(e))]
-    itens = [Item(OK, f"planilha de escritórios: {len(mapa)} domínio(s), "
-                      f"{len(set(mapa.mapa.values()))} escritório(s) – {mapa.origem}")]
+    itens = [Item(OK, f"planilha de escritórios: {mapa.resumo()} – {mapa.origem}")]
     itens += [Item(AVISO, a) for a in mapa.avisos]
     internos = {str(d).lower() for d in cfg.get("filtros.dominios_internos", []) or []}
     for d in sorted(set(mapa.mapa) & internos):
@@ -144,6 +144,12 @@ def arquivamento(cfg: Config) -> List[Item]:
     from .tutoriais import _somente_na_nuvem
 
     raiz = cfg.caminho("arquivamento.raiz")
+    avisos: List[Item] = []
+    bruto = str(cfg.get("arquivamento.raiz") or "").strip()
+    if bruto and not any(s in bruto for s in ("\\", "/", ":")) and bruto.lower() != "arquivo":
+        # v0.3.1: no 1º teste a área preencheu "Diretório" (nome de coluna) em vez de um caminho
+        avisos.append(Item(AVISO, f"caminho_arquivo_emails = '{bruto}' não é um caminho completo: os .msg vão para "
+                                  f"{raiz}. Confira se era essa a pasta desejada."))
     try:
         raiz.mkdir(parents=True, exist_ok=True)
         if _somente_na_nuvem(raiz):
@@ -156,7 +162,7 @@ def arquivamento(cfg: Config) -> List[Item]:
             pass
     except OSError as e:
         return [Item(ERRO, f"pasta de arquivamento sem permissão de gravação ou inacessível: {raiz} ({e})")]
-    return [Item(OK, f"pasta de arquivamento aceita gravação: {raiz}")]
+    return [Item(OK, f"pasta de arquivamento aceita gravação: {raiz}")] + avisos
 
 
 def categorias(cfg: Config) -> List[Item]:

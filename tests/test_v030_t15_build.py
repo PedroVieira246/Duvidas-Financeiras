@@ -76,10 +76,10 @@ def test_entrada_do_exe_e_versao_txt(tmp_path):
     env = {**os.environ, "PYTHONPATH": str(RAIZ / "src")}
     r = subprocess.run([sys.executable, str(RAIZ / "scripts" / "rpa_exe.py"), "--version"], capture_output=True,
                        text=True, env=env, timeout=60)
-    assert r.returncode == 0 and r.stdout.strip() == "0.3.0"
+    assert r.returncode == 0 and r.stdout.strip() == "0.3.1"
     destino = tmp_path / "versao.txt"
     r = subprocess.run([sys.executable, str(RAIZ / "scripts" / "gravar_versao.py"), str(destino)], capture_output=True,
                        text=True, timeout=60)
     assert r.returncode == 0
     linhas = destino.read_text(encoding="utf-8").splitlines()
-    assert linhas[0] == "versao=0.3.0" and linhas[1].startswith("data=") and linhas[2].startswith("commit=")
+    assert linhas[0] == "versao=0.3.1" and linhas[1].startswith("data=") and linhas[2].startswith("commit=")

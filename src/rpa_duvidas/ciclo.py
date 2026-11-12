@@ -209,6 +209,9 @@ class Robo:
             return
         self.escritorios = self.fonte_escritorios()
         self.fornecedores = self.escritorios.lista_fornecedores()
+        resumo = getattr(self.escritorios, "resumo", None)
+        if callable(resumo):
+            log.info("Planilha de escritórios carregada: %s", resumo())
         for aviso in self.escritorios.avisos:
             log.warning("Planilha de escritórios: %s", aviso)
 

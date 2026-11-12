@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from conftest import CAIXA_CAL, preencher_calibracao, usar_caixa_simulada
-from rpa_duvidas import config, verificacao
+from rpa_duvidas import __version__, config, verificacao
 from rpa_duvidas.__main__ import main
 from rpa_duvidas.config_xlsx_modelo import gerar_modelo
 
@@ -176,7 +176,7 @@ def test_menu_do_console(cli_cal, capsys):
     respostas = iter(["1", "", "5", "", "9", "0"])
     assert cmd_menu(argparse.Namespace(perfil="calibracao"), entrada=lambda _: next(respostas)) == 0
     saida = capsys.readouterr().out
-    assert f"RPA Dúvidas Financeiras v0.3.0 – {CAIXA_CAL}" in saida
+    assert f"RPA Dúvidas Financeiras v{__version__} – {CAIXA_CAL}" in saida
     assert "4) Executar continuamente (a cada 15 min)" in saida
     assert "Tudo certo para executar." in saida
     assert "Planilha de controle ainda não existe" in saida and "Opção inválida." in saida

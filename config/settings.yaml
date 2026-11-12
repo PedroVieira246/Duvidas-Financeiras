@@ -133,6 +133,11 @@ escritorios:
   aba: ""                         # vazio = 1ª aba
   coluna_dominio: "Domínio"
   coluna_escritorio: "Escritório"
+  # v0.3.1 – textos da coluna do escritório que significam "sem escritório": a linha
+  # vale como fornecedor e o e-mail fica em "_Sem escritorio" (erros do Excel como
+  # #N/A são tratados sempre). Lista vazia = só os erros do Excel.
+  valores_sem_escritorio:
+    - "CNPJ não consta na base de fornecedores"
 
 # v0.3.0 – Arquivamento dos e-mails tratados em .msg (D05, seção 6.4).
 # Vazio = desligado (v0.2.1).

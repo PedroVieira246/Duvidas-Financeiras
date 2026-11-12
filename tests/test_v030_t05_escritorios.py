@@ -32,9 +32,11 @@ def test_normalizar_dominio():
 
 
 def test_dominio_duplicado_com_dois_escritorios_mostra_as_linhas(tmp_path):
+    # v0.3.1: o conflito deixou de impedir o ciclo – vira aviso com as linhas e o domínio fica sem escritório
     arq = criar_planilha_escritorios(tmp_path / "esc.xlsx", [("a.com.br", "A"), ("b.com.br", "B"), ("A.com.br", "C")])
-    with pytest.raises(ErroEscritorios, match=r"a\.com\.br: linha 2 \(A\), linha 4 \(C\)"):
-        ler_planilha_escritorios(arq)
+    mapa = ler_planilha_escritorios(arq)
+    assert mapa.mapa["a.com.br"] == SEM_ESCRITORIO and mapa.mapa["b.com.br"] == "B"
+    assert any("a.com.br com mais de um escritório – linha 2 (A), linha 4 (C)" in a for a in mapa.avisos)
 
 
 def test_coluna_ausente_e_aba_e_colunas_configuraveis(tmp_path):

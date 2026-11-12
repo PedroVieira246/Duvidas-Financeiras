@@ -31,7 +31,7 @@ from .caixa.base import ErroCaixa
 from .ciclo import Robo
 from .classificacao import criar_classificador
 from .config import Config, ErroConfiguracao, carregar, expandir
-from .filtros import ErroEscritorios, ListaFornecedores, ler_planilha_escritorios
+from .filtros import ErroEscritorios, ListaFornecedores, ler_planilha_escritorios, valores_sem_escritorio
 from .registro import ExecucaoEmAndamento, Registro, configurar_log, trava
 from .respostas import GeradorRespostas
 from .tutoriais import RepositorioTutoriais
@@ -80,6 +80,7 @@ def fonte_escritorios(cfg: Config):
     return lambda: ler_planilha_escritorios(
         cfg.caminho("escritorios.arquivo"), str(cfg.get("escritorios.aba", "") or ""),
         str(cfg.get("escritorios.coluna_dominio", "Domínio")), str(cfg.get("escritorios.coluna_escritorio", "Escritório")),
+        valores_sem_escritorio=valores_sem_escritorio(cfg),
     )
 
 

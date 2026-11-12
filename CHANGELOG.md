@@ -1,5 +1,18 @@
 # Histórico de versões
 
+## 0.3.1 – 12/11/2026
+
+Correção do 1º teste da operação assistida: o ciclo não rodava porque a planilha de escritórios tinha o mesmo domínio com nomes de escritório diferentes. Detalhes em `docs/14_ajustes_v0.3.1.md`.
+
+**Alterado**
+
+- Planilha de escritórios lida por **e-mail** (prioridade) e por domínio. Conflitos, `#N/A`, "CNPJ não consta…", repetições e células que não são e-mail viram avisos com o número da linha no log e no `verificar`; o ciclo só deixa de rodar se a planilha estiver inacessível ou sem nenhuma linha válida.
+- E-mail de domínio público (gmail etc.) na planilha reconhece só aquele endereço, não o domínio inteiro.
+- `DOMINIO_INTERNO` aceita e-mail completo (vale como caixa).
+- `verificar` avisa quando `caminho_arquivo_emails` não é um caminho completo.
+- Nova chave `escritorios.valores_sem_escritorio` (padrão: "CNPJ não consta na base de fornecedores").
+- Versão interna 0.3.1. Testes: `tests/test_v031_planilha_escritorios.py` (dados fictícios com os padrões da planilha real).
+
 ## 0.3.0 – 05/11/2026
 
 Executável configurável por planilha, para a calibração na máquina do analista, conforme a `Especificacao_Tecnica_v0.3.0_EXE_Calibracao.md` (v1.0, 05/11/2026). Detalhes, decisões da análise e desvios em `docs/13_ajustes_v0.3.0.md`; guia de instalação (rascunho) em `docs/12_guia_instalacao_v0.3.0.md`. Sem o perfil `calibracao`, o comportamento é o da v0.2.1: as chaves novas têm padrão que a reproduz.
