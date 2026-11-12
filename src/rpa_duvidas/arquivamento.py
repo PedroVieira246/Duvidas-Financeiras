@@ -3,7 +3,8 @@
 Caminho: ``<raiz>\\<Escritório>\\<AAAA-MM>\\<AAAA-MM-DD_HHMM>_<protocolo>_<assunto>.msg``
 
 * assunto sem ``\\ / : * ? " < > |`` e com no máximo 60 caracteres;
-* caminho completo com no máximo 240 caracteres (o assunto é cortado);
+* caminho completo com no máximo 240 caracteres: primeiro o assunto é cortado
+  e, se ainda não couber, o nome da pasta do escritório é encurtado (v0.3.3);
 * pastas que faltam são criadas.
 
 Uma falha aqui NÃO desfaz a resposta nem manda o e-mail para Erro: o registro
@@ -25,6 +26,7 @@ log = logging.getLogger(__name__)
 
 LIMITE_ASSUNTO = 60
 LIMITE_CAMINHO = 240
+MINIMO_ESCRITORIO = 8                           # v0.3.3: menor nome de pasta de escritório aceito ao encurtar
 PREFIXO_FALHA = "FALHA: "
 _RE_INVALIDOS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _RE_ESPACOS = re.compile(r"\s+")
@@ -43,20 +45,30 @@ def limpar(texto: str, limite: Optional[int] = None) -> str:
 
 def caminho_msg(raiz: Path, escritorio: str, recebido: Optional[datetime], prot: str, assunto: str) -> Path:
     recebido = recebido or datetime.now()
-    pasta = Path(raiz) / (limpar(escritorio) or SEM_ESCRITORIO) / f"{recebido:%Y-%m}"
+    nome_escritorio = limpar(escritorio) or SEM_ESCRITORIO
     base = f"{recebido:%Y-%m-%d_%H%M}_{prot}"
     assunto_limpo = limpar(assunto, LIMITE_ASSUNTO)
 
-    def montar(a: str) -> Path:
-        return pasta / (f"{base}_{a}.msg" if a else f"{base}.msg")
+    def montar(e: str, a: str) -> Path:
+        return Path(raiz) / e / f"{recebido:%Y-%m}" / (f"{base}_{a}.msg" if a else f"{base}.msg")
 
-    caminho = montar(assunto_limpo)
+    caminho = montar(nome_escritorio, assunto_limpo)
     excesso = len(str(caminho)) - LIMITE_CAMINHO
     if excesso > 0:
         assunto_limpo = limpar(assunto_limpo[: max(0, len(assunto_limpo) - excesso)])
-        caminho = montar(assunto_limpo)
+        caminho = montar(nome_escritorio, assunto_limpo)
+    excesso = len(str(caminho)) - LIMITE_CAMINHO
+    if excesso > 0:
+        # v0.3.3: raiz comprida (ex.: pasta do OneDrive). O espaço que sobra depende só da raiz,
+        # então o mesmo escritório cai sempre na mesma pasta encurtada.
+        cabem = len(nome_escritorio) - excesso
+        if cabem >= min(MINIMO_ESCRITORIO, len(nome_escritorio)):
+            curto = limpar(nome_escritorio[:cabem]) or nome_escritorio[:cabem]
+            caminho = montar(curto, assunto_limpo)
     if len(str(caminho)) > LIMITE_CAMINHO:
-        raise ErroArquivamento(f"caminho com mais de {LIMITE_CAMINHO} caracteres mesmo sem o assunto: {caminho}")
+        raise ErroArquivamento(
+            f"caminho com mais de {LIMITE_CAMINHO} caracteres mesmo sem o assunto e com o escritório encurtado "
+            f"(pasta de arquivamento comprida demais): {caminho}")
     return caminho
 
 

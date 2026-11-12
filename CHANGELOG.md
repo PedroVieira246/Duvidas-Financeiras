@@ -1,5 +1,23 @@
 # Histórico de versões
 
+## 0.3.3 – 12/11/2026
+
+Correções do 2º teste da operação assistida (12/11/2026, 60 e-mails, nenhum respondido). **A planilha `configuracao.xlsx` não muda**: o modelo continua 0.3.0 e a planilha já configurada na máquina do analista serve como está.
+
+**Corrigido**
+
+- **Corpo do e-mail descartado.** O aviso de "e-mail externo" que o servidor põe no topo (aviso + endereço do remetente + linha horizontal) fazia a linha horizontal ser lida como início do histórico: a classificação usava só o assunto e a confiança não passava de 0,40. Agora `extracao.remover_preambulo()` tira esse bloco do começo do texto antes de procurar o histórico. Os avisos reconhecidos ficam na chave nova `extracao.banners_ignorados` do `settings.yaml` (empacotado no executável).
+- **Arquivamento `.msg` com pasta comprida.** Com a pasta de arquivamento dentro do OneDrive (182 caracteres), 48 dos 60 e-mails não foram arquivados. Quando o caminho não cabe em 240 caracteres mesmo sem o assunto, o nome da pasta do escritório é encurtado para o espaço que sobra (mínimo de 8 caracteres). O corte depende só da pasta raiz, então o mesmo escritório cai sempre na mesma pasta. Os que falharam podem ser refeitos com `arquivar-pendentes`.
+
+**Alterado**
+
+- **Avisos da planilha de escritórios.** No log do ciclo sai uma linha de resumo (INFO); a lista por linha continua no "Verificar configuração" e, no log, só com `nivel_log` DEBUG. A leitura da planilha não mudou: é só conferência de formato, sem consulta externa.
+- Versão interna 0.3.3. Testes: `tests/test_v033_segundo_teste.py` (dados fictícios).
+
+**Pendente (depende da planilha de configuração, congelada até o fim da operação assistida)**
+
+- Calibração dos termos e pesos da aba Palavras_chave com os e-mails reais.
+
 ## 0.3.2 – 12/11/2026
 
 Decisões da área sobre o 1º teste (detalhes em `docs/14_ajustes_v0.3.1.md`).

@@ -162,7 +162,7 @@ def test_ciclo_com_a_planilha_real_passa_da_carga_e_processa(projeto, cfg, novo_
     novo_email("Reembolso", "preciso de reembolso", remetente="qualquer@gmail.com")
     robo = montar_dependencias(cfg)
     try:
-        with caplog.at_level(logging.INFO, logger="rpa_duvidas"):
+        with caplog.at_level(logging.DEBUG, logger="rpa_duvidas"):
             resumo = robo.executar_ciclo()
     finally:
         robo.registro.fechar()
@@ -174,3 +174,9 @@ def test_ciclo_com_a_planilha_real_passa_da_carga_e_processa(projeto, cfg, novo_
     assert por_rem["qualquer@gmail.com"].classificacao.motivo_manual == MotivoManual.FORA_DA_LISTA
     texto = caplog.text
     assert "Planilha de escritórios carregada" in texto and "linha 15:" in texto and "linha 16:" in texto
+    # v0.3.3: no ciclo o detalhe por linha só sai em DEBUG; em INFO fica uma linha de resumo
+    da_planilha = [r for r in caplog.records if r.getMessage().startswith("Planilha de escritórios: ")]
+    assert da_planilha and all(r.levelno <= logging.INFO for r in da_planilha)
+    resumos = [r for r in da_planilha if r.levelno == logging.INFO]
+    assert len(resumos) == 1 and "linha(s) ignorada(s)" in resumos[0].getMessage()
+    assert all("linha 15:" not in r.getMessage() for r in resumos)

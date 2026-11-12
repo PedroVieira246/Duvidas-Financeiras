@@ -103,6 +103,39 @@ def _compilar(padroes: Iterable[str]) -> List[re.Pattern]:
     return [re.compile(p, re.I) for p in padroes or []]
 
 
+_RE_SEPARADOR = re.compile(r"^[_\-=*]{5,}$")
+_RE_SO_ENDERECO = re.compile(r"^<?(mailto:)?[^\s<>@]+@[^\s<>@]+>?(\s*<mailto:[^\s<>]+>)?$", re.I)
+
+
+def remover_preambulo(texto: str, banners: Sequence[str] = ()) -> str:
+    """Tira do INÍCIO do texto o aviso que o servidor de e-mail coloca antes da mensagem (v0.3.3).
+
+    Ex.: o aviso de "e-mail externo", seguido do endereço do remetente e de uma
+    linha horizontal. Sem isso a linha horizontal era lida como início do
+    histórico e o corpo inteiro era descartado (2º teste da operação assistida).
+
+    ``banners`` = ``extracao.banners_ignorados`` (regex sobre a linha normalizada).
+    Só mexe no começo: para na primeira linha que não é aviso, endereço solto
+    logo após o aviso, linha separadora ou linha vazia. Sem aviso reconhecido,
+    só as linhas separadoras/vazias do topo saem.
+    """
+    padroes = _compilar(banners)
+    linhas = (texto or "").split("\n")
+    i, viu_banner = 0, False
+    while i < len(linhas):
+        norm = normalizar(linhas[i])
+        if not norm or _RE_SEPARADOR.match(norm):
+            i += 1
+        elif any(p.search(norm) for p in padroes):
+            viu_banner = True
+            i += 1
+        elif viu_banner and _RE_SO_ENDERECO.match(norm):
+            i += 1
+        else:
+            break
+    return "\n".join(linhas[i:]) if i < len(linhas) else (texto or "")
+
+
 def limpar_corpo(
     texto: str,
     marcadores_historico: Sequence[str] = (),
@@ -251,7 +284,9 @@ def processar(
     marcas_rpa: Optional[Dict] = None,
 ) -> EmailRecebido:
     """Preenche ``corpo_limpo``, ``resposta_automatica``, ``gerada_pelo_rpa`` e ``historico_resumido``."""
+    banners = cfg_extracao.get("banners_ignorados", [])
     base = html_para_texto(email.corpo_html) if email.corpo_html else _compactar(email.corpo_texto_bruto)
+    base = remover_preambulo(base, banners)          # v0.3.3: aviso de e-mail externo no topo
     email.corpo_limpo = limpar_corpo(
         base,
         cfg_extracao.get("marcadores_historico", []),
@@ -264,9 +299,9 @@ def processar(
     email.gerada_pelo_rpa, email.motivo_gerada_pelo_rpa = detectar_mensagem_do_rpa(
         email, ultima_mensagem(base, cfg_extracao.get("marcadores_historico", [])), marcas_rpa
     )
-    completo = (
-        html_para_texto(email.corpo_html, remover_historico=False) if email.corpo_html else base
-    )
+    completo = remover_preambulo(
+        html_para_texto(email.corpo_html, remover_historico=False), banners
+    ) if email.corpo_html else base
     email.historico_resumido = extrair_historico(
         completo,
         cfg_extracao.get("marcadores_historico", []),

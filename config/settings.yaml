@@ -302,6 +302,13 @@ registro:
 extracao:
   # Trecho do histórico guardado em historico_resumido (contexto para a IA – E1)
   limite_historico: 2000
+  # v0.3.3 – avisos que o servidor de e-mail põe ANTES da mensagem (regex, sem
+  # acento, minúsculas). O aviso, o endereço do remetente logo abaixo e a linha
+  # horizontal são retirados do topo antes de procurar o histórico.
+  banners_ignorados:
+    - '^external e-?mail\b'
+    - '^e-?mail externo\b'
+    - '^(caution|cuidado|atencao)\s*[:\-]\s*.{0,40}(external|extern[oa])'
   # Linhas que marcam o início do histórico citado (regex, sem acento,
   # minúsculas). Tudo a partir da primeira ocorrência é descartado.
   marcadores_historico:

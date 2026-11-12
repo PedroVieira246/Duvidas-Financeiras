@@ -212,8 +212,18 @@ class Robo:
         resumo = getattr(self.escritorios, "resumo", None)
         if callable(resumo):
             log.info("Planilha de escritórios carregada: %s", resumo())
-        for aviso in self.escritorios.avisos:
-            log.warning("Planilha de escritórios: %s", aviso)
+        # v0.3.3: no ciclo sai só o resumo; a lista completa fica no "Verificar configuração"
+        # (e no log, com nivel_log DEBUG). Antes eram ~20 linhas repetidas a cada ciclo.
+        avisos = list(getattr(self.escritorios, "avisos", None) or [])
+        ignoradas = list(getattr(self.escritorios, "linhas_invalidas", None) or [])
+        if avisos:
+            partes = [f"{len(avisos)} observação(ões) de preenchimento"]
+            if ignoradas:
+                partes.append(f"{len(ignoradas)} linha(s) ignorada(s)")
+            log.info("Planilha de escritórios: %s – nada impede a execução; detalhes na opção "
+                     "'Verificar configuração'", ", ".join(partes))
+            for aviso in avisos:
+                log.debug("Planilha de escritórios: %s", aviso)
 
     def preparar_dependencias(self) -> None:
         """v0.3.2 – baixa da nuvem (OneDrive) os tutoriais antes de ler os e-mails. Nunca interrompe o ciclo."""
