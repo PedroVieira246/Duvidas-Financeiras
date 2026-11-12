@@ -139,6 +139,13 @@ escritorios:
   valores_sem_escritorio:
     - "CNPJ não consta na base de fornecedores"
 
+# v0.3.2 – Arquivos do OneDrive "somente on-line" (planilha de escritórios e
+# tutoriais): o robô pede o download antes de usar. false = comportamento da v0.3.1
+# (erro pedindo "Sempre manter neste dispositivo").
+onedrive:
+  baixar_automaticamente: true
+  tempo_limite_s: 120            # por arquivo
+
 # v0.3.0 – Arquivamento dos e-mails tratados em .msg (D05, seção 6.4).
 # Vazio = desligado (v0.2.1).
 arquivamento:

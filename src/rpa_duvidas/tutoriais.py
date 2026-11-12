@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple
 
-# Atributos de arquivo do Windows usados pelo OneDrive para "somente on-line"
-_ATRIBUTOS_NUVEM = 0x00400000 | 0x00040000 | 0x00001000  # RECALL_ON_DATA_ACCESS | RECALL_ON_OPEN | OFFLINE
+from . import nuvem
+from .nuvem import ATRIBUTOS_NUVEM as _ATRIBUTOS_NUVEM  # noqa: F401 (compatibilidade)
 
 
 class TutorialIndisponivel(Exception):
@@ -38,8 +38,15 @@ class Tutorial:
 
 
 def _somente_na_nuvem(caminho: Path) -> bool:
-    atributos = getattr(os.stat(caminho), "st_file_attributes", 0)  # só existe no Windows
-    return bool(atributos & _ATRIBUTOS_NUVEM)
+    return nuvem.somente_na_nuvem(caminho)
+
+
+def _garantir_local(arquivo: Path) -> None:
+    """v0.3.2: arquivo só na nuvem é baixado antes de usar; se não der → ``TutorialIndisponivel``."""
+    try:
+        nuvem.garantir_local(arquivo, somente_na_nuvem=_somente_na_nuvem)
+    except nuvem.ErroNuvem as e:
+        raise TutorialIndisponivel(str(e)) from e
 
 
 class RepositorioTutoriais:
@@ -65,11 +72,8 @@ class RepositorioTutoriais:
         if not candidatos:
             raise TutorialIndisponivel(f"Nenhum arquivo '{padrao}' em {pasta}")
         escolhido = max(candidatos, key=lambda p: p.stat().st_mtime)
-        if self.exigir_local and _somente_na_nuvem(escolhido):
-            raise TutorialIndisponivel(
-                f"Arquivo existe só na nuvem (OneDrive): {escolhido}. Marque a pasta como "
-                "'Sempre manter neste dispositivo'."
-            )
+        if self.exigir_local:
+            _garantir_local(escolhido)
         tamanho = escolhido.stat().st_size
         if tamanho <= 0:
             raise TutorialIndisponivel(f"Arquivo vazio: {escolhido}")
@@ -87,11 +91,8 @@ class RepositorioTutoriais:
         arquivo = self.resolver(bruto)
         if not arquivo.is_file():
             raise TutorialIndisponivel(f"Arquivo do tutorial não encontrado: {arquivo}")
-        if self.exigir_local and _somente_na_nuvem(arquivo):
-            raise TutorialIndisponivel(
-                f"Arquivo existe só na nuvem (OneDrive): {arquivo}. Marque a pasta como "
-                "'Sempre manter neste dispositivo'."
-            )
+        if self.exigir_local:
+            _garantir_local(arquivo)
         tamanho = arquivo.stat().st_size
         if tamanho <= 0:
             raise TutorialIndisponivel(f"Arquivo vazio: {arquivo}")
@@ -100,6 +101,28 @@ class RepositorioTutoriais:
         if tamanho_mb > limite:
             raise TutorialIndisponivel(f"Arquivo com {tamanho_mb:.1f} MB excede o limite de {limite:g} MB: {arquivo}")
         return Tutorial(categoria, arquivo, round(tamanho_mb, 2), str(conf.get("descricao", "")))
+
+    def preparar(self) -> Tuple[int, int, List[str]]:
+        """v0.3.2 – antes do ciclo: baixa da nuvem os tutoriais configurados.
+
+        Devolve ``(disponíveis, baixados agora, problemas)``. Não levanta: um tutorial
+        indisponível só afeta os e-mails daquela categoria (que vão para Erro).
+        """
+        ok, baixados, problemas = 0, 0, []
+        for cat, conf in self.categorias.items():
+            bruto = str((conf or {}).get("caminho_arquivo") or "").strip()
+            if not bruto:
+                continue
+            arquivo = self.resolver(bruto)
+            try:
+                if not arquivo.is_file():
+                    raise TutorialIndisponivel(f"Arquivo do tutorial não encontrado: {arquivo}")
+                if self.exigir_local and nuvem.garantir_local(arquivo, somente_na_nuvem=_somente_na_nuvem):
+                    baixados += 1
+                ok += 1
+            except (TutorialIndisponivel, nuvem.ErroNuvem, OSError) as e:
+                problemas.append(f"{cat}: {e}")
+        return ok, baixados, problemas
 
     def verificar_todos(self) -> List[Tuple[str, bool, str]]:
         """Para o comando ``verificar``: (categoria, ok, detalhe)."""

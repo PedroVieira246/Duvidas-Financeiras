@@ -43,3 +43,27 @@ Problemas de linha que a v0.3.0 não tratava (ou tratava mal):
 Ver o relatório do 1º teste: domínios genéricos, nomes divergentes, Sumaq (duas empresas no mesmo
 domínio), linhas com `#N/A`/"CNPJ não consta", uso da coluna `Diretório` para o arquivamento e
 tutoriais disponíveis offline no OneDrive.
+
+---
+
+# Ajustes v0.3.2 – decisões da área (12/11/2026) e download do OneDrive
+
+| # | Decisão da área | Situação |
+|---|---|---|
+| 1 | A planilha aceita e-mail exato **e** só o domínio (`@fornecedor.com.br`) | Já era o comportamento da v0.3.1; travado em teste. E-mail de domínio público (gmail) continua valendo só pelo endereço |
+| 5 | "CNPJ não consta na base de fornecedores" continua fornecedor | Já era o comportamento da v0.3.1 (fornecedor sem escritório); travado em teste |
+| 8 | Salvar o e-mail do fornecedor numa pasta, por Ano > Mês, antes de responder | **Já está no escopo** (D05, seção 6.4 da especificação v0.3.0, entregue na T11). Diferenças em relação ao pedido: hoje salva **depois** da ação, em `<raiz>\<Escritório>\<AAAA-MM>\`. Ajuste aguardando o detalhamento da nomenclatura e do local |
+| 9 | Baixar os arquivos de dependência antes de prosseguir | **Implementado** (`nuvem.py`) |
+
+## Download automático (item 9)
+
+- `nuvem.garantir_local()`: arquivo "somente on-line" é lido por inteiro, o que faz o OneDrive
+  baixá-lo. A leitura tem tempo limite (`onedrive.tempo_limite_s`, padrão 120 s) para o robô não
+  travar com o OneDrive fechado ou sem rede. Depois confere o atributo de novo.
+- Usado na planilha de escritórios, nos tutoriais e no `verificar`. Antes de ler os e-mails, o ciclo
+  chama `RepositorioTutoriais.preparar()`, que baixa todos os tutoriais configurados e registra
+  `Tutoriais: N disponível(is), N baixado(s) do OneDrive agora, N com problema`.
+- Não fixa o arquivo no dispositivo (não altera a configuração do OneDrive), não precisa de
+  administrador nem de biblioteca nova. `onedrive.baixar_automaticamente: false` volta ao
+  comportamento da v0.3.1.
+- A pasta de arquivamento só é conferida (pasta não se baixa).
