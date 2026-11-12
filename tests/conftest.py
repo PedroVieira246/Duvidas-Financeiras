@@ -15,8 +15,8 @@ RAIZ = Path(__file__).resolve().parents[1]
 @pytest.fixture()
 def projeto(tmp_path: Path) -> Path:
     """Cópia de config/ e dos tutoriais fictícios num diretório temporário."""
-    shutil.copytree(RAIZ / "config", tmp_path / "config")
-    shutil.copytree(RAIZ / "dados_teste" / "tutoriais", tmp_path / "dados_teste" / "tutoriais")
+    shutil.copytree(RAIZ / "config", tmp_path / "config", copy_function=shutil.copyfile)
+    shutil.copytree(RAIZ / "dados_teste" / "tutoriais", tmp_path / "dados_teste" / "tutoriais", copy_function=shutil.copyfile)
     (tmp_path / "dados_teste" / "caixa_simulada" / "entrada").mkdir(parents=True)
     return tmp_path
 

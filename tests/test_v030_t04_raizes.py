@@ -17,7 +17,7 @@ def exe(tmp_path, monkeypatch):
     """Simula o onedir: <app>/RPA_DuvidasFinanceiras.exe + <app>/_internal (recursos)."""
     app = tmp_path / "RPA_DuvidasFinanceiras"
     internos = app / "_internal"
-    shutil.copytree(RAIZ / "config", internos / "config")
+    shutil.copytree(RAIZ / "config", internos / "config", copy_function=shutil.copyfile)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(app / "RPA_DuvidasFinanceiras.exe"))
     monkeypatch.setattr(sys, "_MEIPASS", str(internos), raising=False)
@@ -42,8 +42,8 @@ def test_no_executavel_aplicacao_e_a_pasta_do_exe(exe):
 def test_carregar_le_recursos_do_pacote_e_planilha_ao_lado_do_exe(exe):
     # a planilha é gerada com o projeto e copiada para <app>/config, como no pacote entregue
     projeto = exe.parent / "projeto"
-    shutil.copytree(RAIZ / "config", projeto / "config")
-    shutil.copytree(RAIZ / "dados_teste" / "tutoriais", projeto / "dados_teste" / "tutoriais")
+    shutil.copytree(RAIZ / "config", projeto / "config", copy_function=shutil.copyfile)
+    shutil.copytree(RAIZ / "dados_teste" / "tutoriais", projeto / "dados_teste" / "tutoriais", copy_function=shutil.copyfile)
     preencher_calibracao(projeto, destino=exe / "config" / "configuracao.xlsx")
     cfg = carregar()                                   # perfil padrão do .exe: calibracao
     assert cfg.perfil == "calibracao" and cfg.erros_xlsx == []

@@ -43,8 +43,8 @@ def test_pacote_so_com_os_arquivos_do_spec_carrega_o_perfil_calibracao(tmp_path,
         for arq in glob.glob(str(RAIZ / origem)):
             shutil.copy(arq, internos / destino)
     projeto = tmp_path / "projeto"
-    shutil.copytree(RAIZ / "config", projeto / "config")
-    shutil.copytree(RAIZ / "dados_teste" / "tutoriais", app / "dados_teste" / "tutoriais")
+    shutil.copytree(RAIZ / "config", projeto / "config", copy_function=shutil.copyfile)
+    shutil.copytree(RAIZ / "dados_teste" / "tutoriais", app / "dados_teste" / "tutoriais", copy_function=shutil.copyfile)
     preencher_calibracao(projeto, destino=app / "config" / "configuracao.xlsx")
     shutil.copy(projeto / "dados_teste" / "escritorios.xlsx", app / "dados_teste" / "escritorios.xlsx")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
