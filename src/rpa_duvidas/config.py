@@ -376,4 +376,8 @@ def carregar(
         dados = mesclar(dados, parcial)
     cfg = Config(_derivar(dados), perfil, raiz, recursos)
     cfg.erros_xlsx = list(erros_xlsx)
+    from . import nuvem                     # v0.3.2 – download automático do OneDrive
+
+    od = dados.get("onedrive") or {}
+    nuvem.configurar(od.get("baixar_automaticamente", True), od.get("tempo_limite_s", 120))
     return cfg

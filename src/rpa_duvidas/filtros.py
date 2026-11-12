@@ -277,16 +277,17 @@ def ler_planilha_escritorios(
     """
     from openpyxl import load_workbook
 
+    from . import nuvem
+
     if somente_na_nuvem is None:
         from .tutoriais import _somente_na_nuvem as somente_na_nuvem
     caminho = Path(caminho)
     if not caminho.is_file():
         raise ErroEscritorios(f"Planilha de escritórios não encontrada: {caminho}")
-    if somente_na_nuvem(caminho):
-        raise ErroEscritorios(
-            f"Planilha de escritórios existe só na nuvem (OneDrive): {caminho}. Marque a pasta como "
-            "'Sempre manter neste dispositivo'."
-        )
+    try:                                   # v0.3.2: só na nuvem → baixa antes de abrir
+        nuvem.garantir_local(caminho, somente_na_nuvem=somente_na_nuvem)
+    except nuvem.ErroNuvem as e:
+        raise ErroEscritorios(f"Planilha de escritórios: {e}") from e
     pasta_tmp = Path(tempfile.mkdtemp(prefix="rpa_esc_"))
     try:
         try:

@@ -1,5 +1,18 @@
 # Histórico de versões
 
+## 0.3.2 – 12/11/2026
+
+Decisões da área sobre o 1º teste (detalhes em `docs/14_ajustes_v0.3.1.md`).
+
+**Incluído**
+
+- Download automático de arquivos do OneDrive "somente on-line" (`nuvem.py`): planilha de escritórios e tutoriais são baixados antes de usar, com tempo limite por arquivo. Antes de ler os e-mails, o ciclo prepara todos os tutoriais e registra o resultado no log. Chaves novas `onedrive.baixar_automaticamente` e `onedrive.tempo_limite_s`.
+- Testes `tests/test_v032_onedrive_e_decisoes.py`, incluindo as decisões 1 (e-mail exato e domínio) e 5 ("CNPJ não consta" continua fornecedor).
+
+**Alterado**
+
+- Versão interna 0.3.2.
+
 ## 0.3.1 – 12/11/2026
 
 Correção do 1º teste da operação assistida: o ciclo não rodava porque a planilha de escritórios tinha o mesmo domínio com nomes de escritório diferentes. Detalhes em `docs/14_ajustes_v0.3.1.md`.

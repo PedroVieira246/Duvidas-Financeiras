@@ -215,6 +215,22 @@ class Robo:
         for aviso in self.escritorios.avisos:
             log.warning("Planilha de escritórios: %s", aviso)
 
+    def preparar_dependencias(self) -> None:
+        """v0.3.2 – baixa da nuvem (OneDrive) os tutoriais antes de ler os e-mails. Nunca interrompe o ciclo."""
+        preparar = getattr(self.tutoriais, "preparar", None)
+        if not callable(preparar):
+            return
+        try:
+            ok, baixados, problemas = preparar()
+        except Exception:                       # a preparação não pode derrubar o ciclo
+            log.exception("Falha ao preparar os tutoriais")
+            return
+        if ok or baixados or problemas:
+            log.info("Tutoriais: %d disponível(is), %d baixado(s) do OneDrive agora, %d com problema",
+                     ok, baixados, len(problemas))
+        for p in problemas:
+            log.warning("Tutorial indisponível – %s", p)
+
     # ------------------------------------------------------------------ #
     def executar_ciclo(self) -> ResumoCiclo:
         resumo = ResumoCiclo(ciclo_id=f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:4]}", modo=self.modo)
@@ -229,6 +245,7 @@ class Robo:
             self.registro.gravar_ciclo(resumo.ciclo_id, self.modo, resumo.inicio, resumo.contagem(),
                                        obs=f"NÃO EXECUTADO: {erro}"[:500])
             return resumo
+        self.preparar_dependencias()
         self.atualizar_bloqueios()
         if hasattr(self.classificador, "iniciar_ciclo"):
             self.classificador.iniciar_ciclo()          # zera o contador de falhas da IA (RNF-IA03)
